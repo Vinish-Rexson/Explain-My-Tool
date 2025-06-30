@@ -12,6 +12,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true)
   const [syncingVideos, setSyncingVideos] = useState(false)
   const [retryingProject, setRetryingProject] = useState<string | null>(null)
+  const [checkingTavus, setCheckingTavus] = useState<Set<string>>(new Set())
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [showLiveConversation, setShowLiveConversation] = useState(false)
@@ -44,6 +45,22 @@ const Dashboard = () => {
     }
   }, [user])
 
+  // Auto-check Tavus for processing projects
+  useEffect(() => {
+    const processingProjects = projects.filter(p => 
+      p.status === 'processing' && 
+      p.tavus_video_id && 
+      !checkingTavus.has(p.id)
+    )
+
+    if (processingProjects.length > 0) {
+      console.log('Found processing projects with Tavus IDs, checking immediately:', processingProjects.map(p => p.tavus_video_id))
+      processingProjects.forEach(project => {
+        checkTavusVideoStatus(project.id, project.tavus_video_id)
+      })
+    }
+  }, [projects])
+
   const fetchProjects = async () => {
     try {
       const { data, error } = await supabase
@@ -57,6 +74,61 @@ const Dashboard = () => {
       console.error('Error fetching projects:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const checkTavusVideoStatus = async (projectId: string, tavusVideoId: string) => {
+    // Prevent duplicate checks
+    if (checkingTavus.has(projectId)) return
+    
+    setCheckingTavus(prev => new Set(prev).add(projectId))
+    
+    try {
+      console.log(`🎬 Immediately checking Tavus for project ${projectId}, video ID: ${tavusVideoId}`)
+      
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-tavus-videos`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectId: projectId
+        })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('Tavus check result:', result)
+        
+        if (result.updated > 0) {
+          console.log('✅ Video found and updated from Tavus!')
+          // Refresh projects to show the updated status
+          await fetchProjects()
+        } else {
+          console.log('📝 Video still processing on Tavus, will check again in 30 seconds')
+          // Schedule another check in 30 seconds
+          setTimeout(() => {
+            setCheckingTavus(prev => {
+              const newSet = new Set(prev)
+              newSet.delete(projectId)
+              return newSet
+            })
+            // This will trigger the useEffect again if still processing
+          }, 30000)
+        }
+      }
+    } catch (error) {
+      console.error('Error checking Tavus status:', error)
+    } finally {
+      // Remove from checking set after 30 seconds to allow re-checking
+      setTimeout(() => {
+        setCheckingTavus(prev => {
+          const newSet = new Set(prev)
+          newSet.delete(projectId)
+          return newSet
+        })
+      }, 30000)
     }
   }
 
@@ -179,12 +251,14 @@ const Dashboard = () => {
     setSelectedRepository(null)
   }
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = (status: string, projectId?: string) => {
     switch (status) {
       case 'completed':
         return <CheckCircle className="h-5 w-5 text-green-500" />
       case 'processing':
-        return <Loader2 className="h-5 w-5 text-yellow-500 animate-spin" />
+        return checkingTavus.has(projectId || '') 
+          ? <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
+          : <Loader2 className="h-5 w-5 text-yellow-500 animate-spin" />
       case 'failed':
         return <XCircle className="h-5 w-5 text-red-500" />
       default:
@@ -192,17 +266,26 @@ const Dashboard = () => {
     }
   }
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string, projectId?: string) => {
     switch (status) {
       case 'completed':
         return 'bg-green-100 text-green-800'
       case 'processing':
-        return 'bg-yellow-100 text-yellow-800'
+        return checkingTavus.has(projectId || '') 
+          ? 'bg-blue-100 text-blue-800'
+          : 'bg-yellow-100 text-yellow-800'
       case 'failed':
         return 'bg-red-100 text-red-800'
       default:
         return 'bg-gray-100 text-gray-800'
     }
+  }
+
+  const getStatusText = (status: string, projectId?: string) => {
+    if (status === 'processing' && checkingTavus.has(projectId || '')) {
+      return 'checking tavus'
+    }
+    return status
   }
 
   const getSubscriptionLimits = () => {
@@ -221,7 +304,7 @@ const Dashboard = () => {
 
   // Count projects with pending Tavus videos
   const pendingTavusProjects = projects.filter(p => 
-    p.status === 'failed' && p.tavus_video_id
+    (p.status === 'failed' || p.status === 'processing') && p.tavus_video_id
   ).length
 
   if (showCreateProject) {
@@ -294,7 +377,7 @@ const Dashboard = () => {
                   className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <RefreshCw className={`h-4 w-4 ${syncingVideos ? 'animate-spin' : ''}`} />
-                  <span>{syncingVideos ? 'Syncing...' : `Sync Videos (${pendingTavusProjects})`}</span>
+                  <span>{syncingVideos ? 'Syncing...' : `Check Tavus (${pendingTavusProjects})`}</span>
                 </button>
               )}
               <button 
@@ -332,7 +415,7 @@ const Dashboard = () => {
                     {pendingTavusProjects} video{pendingTavusProjects > 1 ? 's' : ''} may be ready from Tavus
                   </p>
                   <p className="text-blue-600 text-sm">
-                    Click "Sync Videos" to check for completed videos and update their status.
+                    Videos are automatically checked every 30 seconds. Click "Check Tavus" to manually sync now.
                   </p>
                 </div>
                 <button 
@@ -341,7 +424,7 @@ const Dashboard = () => {
                   className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
                 >
                   <RefreshCw className={`h-4 w-4 ${syncingVideos ? 'animate-spin' : ''}`} />
-                  <span>{syncingVideos ? 'Syncing...' : 'Sync Now'}</span>
+                  <span>{syncingVideos ? 'Checking...' : 'Check Now'}</span>
                 </button>
               </div>
             </div>
@@ -416,7 +499,7 @@ const Dashboard = () => {
                 {pendingTavusProjects > 0 && (
                   <>
                     <span>•</span>
-                    <span className="text-blue-600">{pendingTavusProjects} pending sync</span>
+                    <span className="text-blue-600">{pendingTavusProjects} checking tavus</span>
                   </>
                 )}
               </div>
@@ -457,13 +540,13 @@ const Dashboard = () => {
                         <h3 className="text-lg font-medium text-gray-900">
                           {project.title}
                         </h3>
-                        {getStatusIcon(project.status)}
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
-                          {project.status}
+                        {getStatusIcon(project.status, project.id)}
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(project.status, project.id)}`}>
+                          {getStatusText(project.status, project.id)}
                         </span>
-                        {project.tavus_video_id && project.status === 'failed' && (
+                        {project.tavus_video_id && (project.status === 'failed' || project.status === 'processing') && (
                           <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            Tavus Ready
+                            {checkingTavus.has(project.id) ? 'Checking Tavus...' : 'Tavus Ready'}
                           </span>
                         )}
                       </div>
@@ -545,7 +628,12 @@ const Dashboard = () => {
                       <div className="flex items-center space-x-2">
                         <Loader2 className="h-4 w-4 text-yellow-600 animate-spin" />
                         <span className="text-sm text-yellow-800">
-                          AI is analyzing your code and generating your demo video. This usually takes 2-5 minutes.
+                          {checkingTavus.has(project.id) 
+                            ? 'Checking Tavus for completed video...'
+                            : project.tavus_video_id 
+                              ? 'Video is being generated by Tavus. Checking automatically every 30 seconds.'
+                              : 'AI is analyzing your code and generating your demo video. This usually takes 2-5 minutes.'
+                          }
                         </span>
                       </div>
                     </div>
@@ -574,7 +662,7 @@ const Dashboard = () => {
                               disabled={syncingVideos}
                               className="text-sm text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
                             >
-                              {syncingVideos ? 'Syncing...' : 'Sync Now'}
+                              {syncingVideos ? 'Checking...' : 'Check Now'}
                             </button>
                           )}
                           <button 
