@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Plus, Video, BarChart3, Settings, Github, Play, Edit, Trash2, Eye, Share2, Clock, CheckCircle, XCircle, Loader2, MessageCircle } from 'lucide-react'
+import { Plus, Video, BarChart3, Settings, Github, Play, Edit, Trash2, Eye, Share2, Clock, CheckCircle, XCircle, Loader2, MessageCircle, RefreshCw } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase, Project } from '../lib/supabase'
 import CreateProject from './CreateProject'
@@ -10,6 +10,7 @@ const Dashboard = () => {
   const { user, profile } = useAuth()
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
+  const [syncingVideos, setSyncingVideos] = useState(false)
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [showLiveConversation, setShowLiveConversation] = useState(false)
@@ -58,6 +59,40 @@ const Dashboard = () => {
     }
   }
 
+  const syncTavusVideos = async () => {
+    setSyncingVideos(true)
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-tavus-videos`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to sync Tavus videos')
+      }
+
+      const result = await response.json()
+      console.log('Sync result:', result)
+      
+      // Refresh projects to show updated status
+      await fetchProjects()
+      
+      if (result.updated > 0) {
+        alert(`Successfully updated ${result.updated} completed videos!`)
+      } else {
+        alert('No new completed videos found.')
+      }
+    } catch (error) {
+      console.error('Error syncing Tavus videos:', error)
+      alert('Failed to sync videos. Please try again.')
+    } finally {
+      setSyncingVideos(false)
+    }
+  }
+
   const deleteProject = async (projectId: string) => {
     if (!confirm('Are you sure you want to delete this project?')) return
 
@@ -72,6 +107,27 @@ const Dashboard = () => {
     } catch (error) {
       console.error('Error deleting project:', error)
       alert('Failed to delete project')
+    }
+  }
+
+  const retryProject = async (projectId: string) => {
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .update({
+          status: 'processing',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', projectId)
+
+      if (error) throw error
+      
+      // Refresh projects
+      await fetchProjects()
+      alert('Project retry initiated. Processing will begin shortly.')
+    } catch (error) {
+      console.error('Error retrying project:', error)
+      alert('Failed to retry project')
     }
   }
 
@@ -130,6 +186,11 @@ const Dashboard = () => {
 
   const limits = getSubscriptionLimits()
   const canCreateMore = typeof limits.videos === 'string' || limits.used < limits.videos
+
+  // Count projects with pending Tavus videos
+  const pendingTavusProjects = projects.filter(p => 
+    p.status === 'failed' && p.tavus_video_id
+  ).length
 
   if (showCreateProject) {
     return (
@@ -194,6 +255,16 @@ const Dashboard = () => {
               </p>
             </div>
             <div className="flex items-center space-x-3">
+              {pendingTavusProjects > 0 && (
+                <button 
+                  onClick={syncTavusVideos}
+                  disabled={syncingVideos}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className={`h-4 w-4 ${syncingVideos ? 'animate-spin' : ''}`} />
+                  <span>{syncingVideos ? 'Syncing...' : `Sync Videos (${pendingTavusProjects})`}</span>
+                </button>
+              )}
               <button 
                 onClick={() => setShowGitHubRepos(true)}
                 className="bg-gray-900 text-white px-6 py-3 rounded-lg hover:bg-gray-800 transition-colors flex items-center space-x-2"
@@ -218,6 +289,29 @@ const Dashboard = () => {
                 You've reached your monthly limit of {limits.videos} videos. 
                 <a href="#pricing" className="font-medium underline ml-1">Upgrade your plan</a> to create more demos.
               </p>
+            </div>
+          )}
+
+          {pendingTavusProjects > 0 && (
+            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-blue-800 font-medium">
+                    {pendingTavusProjects} video{pendingTavusProjects > 1 ? 's' : ''} may be ready from Tavus
+                  </p>
+                  <p className="text-blue-600 text-sm">
+                    Click "Sync Videos" to check for completed videos and update their status.
+                  </p>
+                </div>
+                <button 
+                  onClick={syncTavusVideos}
+                  disabled={syncingVideos}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-4 w-4 ${syncingVideos ? 'animate-spin' : ''}`} />
+                  <span>{syncingVideos ? 'Syncing...' : 'Sync Now'}</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -287,6 +381,12 @@ const Dashboard = () => {
                 <span>{projects.filter(p => p.status === 'processing').length} processing</span>
                 <span>•</span>
                 <span>{projects.filter(p => p.status === 'completed').length} completed</span>
+                {pendingTavusProjects > 0 && (
+                  <>
+                    <span>•</span>
+                    <span className="text-blue-600">{pendingTavusProjects} pending sync</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -329,6 +429,11 @@ const Dashboard = () => {
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
                           {project.status}
                         </span>
+                        {project.tavus_video_id && project.status === 'failed' && (
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            Tavus Ready
+                          </span>
+                        )}
                       </div>
                       
                       {project.description && (
@@ -338,6 +443,9 @@ const Dashboard = () => {
                       <div className="flex items-center space-x-4 text-sm text-gray-500">
                         <span>Created {new Date(project.created_at).toLocaleDateString()}</span>
                         <span>Updated {new Date(project.updated_at).toLocaleDateString()}</span>
+                        {project.tavus_video_id && (
+                          <span className="text-blue-600">Tavus ID: {project.tavus_video_id}</span>
+                        )}
                       </div>
                     </div>
                     
@@ -379,6 +487,16 @@ const Dashboard = () => {
                         <span>Edit</span>
                       </button>
                       
+                      {project.status === 'failed' && (
+                        <button 
+                          onClick={() => retryProject(project.id)}
+                          className="flex items-center space-x-1 px-3 py-2 text-orange-600 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                          <span>Retry</span>
+                        </button>
+                      )}
+                      
                       <button 
                         onClick={() => deleteProject(project.id)}
                         className="flex items-center space-x-1 px-3 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
@@ -403,12 +521,36 @@ const Dashboard = () => {
                   {project.status === 'failed' && (
                     <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-red-800">
-                          Failed to generate video. Please try again or contact support.
-                        </span>
-                        <button className="text-sm text-red-600 hover:text-red-700 font-medium">
-                          Retry
-                        </button>
+                        <div>
+                          <span className="text-sm text-red-800">
+                            {project.tavus_video_id 
+                              ? 'Video may be ready on Tavus. Click "Sync Videos" to check.'
+                              : 'Failed to generate video. Please try again or contact support.'
+                            }
+                          </span>
+                          {project.tavus_video_id && (
+                            <p className="text-xs text-red-600 mt-1">
+                              Tavus Video ID: {project.tavus_video_id}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex space-x-2">
+                          {project.tavus_video_id && (
+                            <button 
+                              onClick={syncTavusVideos}
+                              disabled={syncingVideos}
+                              className="text-sm text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
+                            >
+                              {syncingVideos ? 'Syncing...' : 'Sync Now'}
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => retryProject(project.id)}
+                            className="text-sm text-red-600 hover:text-red-700 font-medium"
+                          >
+                            Retry
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
