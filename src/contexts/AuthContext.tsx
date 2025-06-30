@@ -37,7 +37,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const loadingTimeout = setTimeout(() => {
       console.log('AuthProvider: Loading timeout reached, forcing loading to false')
       setLoading(false)
-    }, 10000) // 10 seconds max loading time
+    }, 20000) // Increased to 20 seconds max loading time
 
     // Handle OAuth redirect by cleaning up the URL
     const handleOAuthRedirect = () => {
@@ -177,9 +177,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       })()
 
-      // Race the profile fetch against a timeout
+      // Race the profile fetch against a timeout - increased from 8 to 15 seconds
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Profile fetch timeout')), 8000) // 8 second timeout
+        setTimeout(() => reject(new Error('Profile fetch timeout')), 15000) // Increased to 15 second timeout
       })
 
       await Promise.race([profilePromise, timeoutPromise])
@@ -187,16 +187,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       console.error('AuthProvider: Error in fetchOrCreateProfile:', error)
       // Create a fallback profile to avoid blocking the user
-      setProfile({
+      const fallbackProfile = {
         id: user.id,
         email: user.email!,
         full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
         avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
-        subscription_tier: 'free',
+        subscription_tier: 'free' as const,
         github_username: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      })
+      }
+      
+      console.log('AuthProvider: Setting fallback profile due to error')
+      setProfile(fallbackProfile)
+      
+      // Try to create the profile in the background without blocking the user
+      setTimeout(async () => {
+        try {
+          console.log('AuthProvider: Attempting background profile creation')
+          const { data: backgroundProfile, error: backgroundError } = await supabase
+            .from('profiles')
+            .upsert([fallbackProfile])
+            .select()
+            .single()
+          
+          if (!backgroundError && backgroundProfile) {
+            console.log('AuthProvider: Background profile creation successful')
+            setProfile(backgroundProfile)
+          }
+        } catch (bgError) {
+          console.error('AuthProvider: Background profile creation failed:', bgError)
+        }
+      }, 2000) // Try again after 2 seconds
     } finally {
       console.log('AuthProvider: Setting loading to false after profile operations')
       setLoading(false)
