@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    log('INIT', '🚀 Starting enhanced Tavus projects fix')
+    log('INIT', '🚀 Starting enhanced Tavus projects fix with READY status support')
 
     // Initialize Supabase client
     const supabaseClient = createClient(
@@ -111,7 +111,7 @@ Deno.serve(async (req) => {
         const videoData = await response.json()
         log('TAVUS', `📊 Full video data for ${mapping.videoId}:`, videoData)
 
-        // Check if video is ready (either "completed" or "ready" status with download_url)
+        // ✅ ENHANCED: Accept both "completed" AND "ready" status with download_url
         const isVideoReady = (
           (videoData.status === 'completed' || videoData.status === 'ready') && 
           videoData.download_url
@@ -121,11 +121,13 @@ Deno.serve(async (req) => {
           status: videoData.status,
           hasDownloadUrl: !!videoData.download_url,
           isVideoReady: isVideoReady,
-          downloadUrl: videoData.download_url,
+          downloadUrl: videoData.download_url ? 'YES' : 'NO',
           expectedTitle: mapping.expectedTitle
         })
 
         if (isVideoReady) {
+          log('READY', `✅ Video ${mapping.videoId} is READY for matching! Status: ${videoData.status}`)
+          
           // Try multiple matching strategies
           let matchedProject = null
           let matchStrategy = 'none'
@@ -165,9 +167,9 @@ Deno.serve(async (req) => {
           }
 
           if (matchedProject) {
-            log('MATCH', `🎯 Matched video ${mapping.videoId} to project: "${matchedProject.title}" (ID: ${matchedProject.id}) using ${matchStrategy} strategy`)
+            log('MATCH', `🎯 MATCHED! Video ${mapping.videoId} → Project: "${matchedProject.title}" (ID: ${matchedProject.id}) using ${matchStrategy} strategy`)
             
-            // Update project with Tavus video ID and completed status
+            // ✅ CRITICAL UPDATE: Update project with Tavus video ID and completed status
             const updateData = {
               tavus_video_id: mapping.videoId,
               video_url: videoData.download_url,
@@ -175,7 +177,7 @@ Deno.serve(async (req) => {
               updated_at: new Date().toISOString()
             }
 
-            log('UPDATE', `💾 Updating project ${matchedProject.id} with data:`, updateData)
+            log('UPDATE', `💾 UPDATING project ${matchedProject.id} with:`, updateData)
 
             const { error: updateError } = await supabaseClient
               .from('projects')
@@ -194,7 +196,7 @@ Deno.serve(async (req) => {
                 matchStrategy: matchStrategy
               })
             } else {
-              log('SUCCESS', `✅ Successfully updated project: "${matchedProject.title}" with video ${mapping.videoId}`)
+              log('SUCCESS', `✅ SUCCESSFULLY UPDATED project: "${matchedProject.title}" with video ${mapping.videoId}`)
               updatedCount++
               results.push({
                 videoId: mapping.videoId,
@@ -204,7 +206,8 @@ Deno.serve(async (req) => {
                 status: 'completed',
                 videoUrl: videoData.download_url,
                 matchStrategy: matchStrategy,
-                tavusStatus: videoData.status
+                tavusStatus: videoData.status,
+                updated: true
               })
 
               // Create analytics entry
@@ -240,7 +243,7 @@ Deno.serve(async (req) => {
             })
           }
         } else {
-          log('INFO', `📝 Video ${mapping.videoId} not ready`, { 
+          log('INFO', `📝 Video ${mapping.videoId} NOT READY`, { 
             status: videoData.status,
             hasDownloadUrl: !!videoData.download_url,
             expectedTitle: mapping.expectedTitle 
@@ -249,7 +252,7 @@ Deno.serve(async (req) => {
             videoId: mapping.videoId,
             expectedTitle: mapping.expectedTitle,
             status: videoData.status || 'not_ready',
-            message: `Video status: ${videoData.status}, has download URL: ${!!videoData.download_url}`,
+            message: `Video not completed yet`,
             tavusStatus: videoData.status,
             hasDownloadUrl: !!videoData.download_url
           })
@@ -276,7 +279,7 @@ Deno.serve(async (req) => {
       completed: results.filter(r => r.status === 'completed').length,
       failed: results.filter(r => r.status === 'error' || r.status === 'api_error').length,
       noMatch: results.filter(r => r.status === 'no_match').length,
-      notReady: results.filter(r => r.status === 'not_ready' || r.status === 'ready').length
+      notReady: results.filter(r => r.status === 'not_ready' || (r.status === 'ready' && !r.updated)).length
     }
 
     log('SUMMARY', '📊 Final summary:', summary)
@@ -286,6 +289,7 @@ Deno.serve(async (req) => {
         success: true,
         message: `Fix completed! Updated ${updatedCount} projects with Tavus videos`,
         updated: updatedCount,
+        totalProjects: projects.length,
         summary: summary,
         projects: projects.map(p => ({ id: p.id, title: p.title, status: p.status })),
         results: results
