@@ -21,6 +21,15 @@ Deno.serve(async (req) => {
   try {
     log('INIT', '🚀 Starting Tavus video sync process')
 
+    // Parse request body for specific project ID (optional)
+    let targetProjectId = null
+    try {
+      const body = await req.json()
+      targetProjectId = body?.projectId
+    } catch {
+      // No body or invalid JSON, that's fine
+    }
+
     // Initialize Supabase client
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -34,13 +43,21 @@ Deno.serve(async (req) => {
       throw new Error('Tavus API key not configured')
     }
 
-    // Find all projects with tavus_video_id but status is not completed
+    // Build query for projects with tavus_video_id but status is not completed
     log('DATABASE', '🔍 Finding projects with pending Tavus videos')
-    const { data: projects, error: projectsError } = await supabaseClient
+    let query = supabaseClient
       .from('projects')
       .select('id, tavus_video_id, status, title')
       .not('tavus_video_id', 'is', null)
       .neq('status', 'completed')
+
+    // If specific project ID provided, filter to that project
+    if (targetProjectId) {
+      query = query.eq('id', targetProjectId)
+      log('DATABASE', '🎯 Targeting specific project', { projectId: targetProjectId })
+    }
+
+    const { data: projects, error: projectsError } = await query
 
     if (projectsError) {
       log('ERROR', '❌ Failed to fetch projects', projectsError)
@@ -52,7 +69,9 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: true,
-          message: 'No pending Tavus videos found',
+          message: targetProjectId 
+            ? 'No pending Tavus video found for this project'
+            : 'No pending Tavus videos found',
           updated: 0
         }),
         {

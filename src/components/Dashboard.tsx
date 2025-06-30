@@ -11,6 +11,7 @@ const Dashboard = () => {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [syncingVideos, setSyncingVideos] = useState(false)
+  const [retryingProject, setRetryingProject] = useState<string | null>(null)
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [showLiveConversation, setShowLiveConversation] = useState(false)
@@ -93,25 +94,37 @@ const Dashboard = () => {
     }
   }
 
-  const deleteProject = async (projectId: string) => {
-    if (!confirm('Are you sure you want to delete this project?')) return
-
-    try {
-      const { error } = await supabase
-        .from('projects')
-        .delete()
-        .eq('id', projectId)
-
-      if (error) throw error
-      setProjects(projects.filter(p => p.id !== projectId))
-    } catch (error) {
-      console.error('Error deleting project:', error)
-      alert('Failed to delete project')
-    }
-  }
-
   const retryProject = async (projectId: string) => {
+    setRetryingProject(projectId)
     try {
+      // First, try to fetch from Tavus if there's a tavus_video_id
+      const project = projects.find(p => p.id === projectId)
+      if (project?.tavus_video_id) {
+        console.log('Attempting to fetch video from Tavus:', project.tavus_video_id)
+        
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-tavus-videos`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            projectId: projectId // Optional: sync specific project
+          })
+        })
+
+        if (response.ok) {
+          const result = await response.json()
+          await fetchProjects()
+          
+          if (result.updated > 0) {
+            alert('Video successfully fetched from Tavus!')
+            return
+          }
+        }
+      }
+
+      // If Tavus fetch didn't work, restart the generation process
       const { error } = await supabase
         .from('projects')
         .update({
@@ -128,6 +141,25 @@ const Dashboard = () => {
     } catch (error) {
       console.error('Error retrying project:', error)
       alert('Failed to retry project')
+    } finally {
+      setRetryingProject(null)
+    }
+  }
+
+  const deleteProject = async (projectId: string) => {
+    if (!confirm('Are you sure you want to delete this project?')) return
+
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', projectId)
+
+      if (error) throw error
+      setProjects(projects.filter(p => p.id !== projectId))
+    } catch (error) {
+      console.error('Error deleting project:', error)
+      alert('Failed to delete project')
     }
   }
 
@@ -490,10 +522,11 @@ const Dashboard = () => {
                       {project.status === 'failed' && (
                         <button 
                           onClick={() => retryProject(project.id)}
-                          className="flex items-center space-x-1 px-3 py-2 text-orange-600 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors"
+                          disabled={retryingProject === project.id}
+                          className="flex items-center space-x-1 px-3 py-2 text-orange-600 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          <RefreshCw className="h-4 w-4" />
-                          <span>Retry</span>
+                          <RefreshCw className={`h-4 w-4 ${retryingProject === project.id ? 'animate-spin' : ''}`} />
+                          <span>{retryingProject === project.id ? 'Retrying...' : 'Retry'}</span>
                         </button>
                       )}
                       
@@ -524,7 +557,7 @@ const Dashboard = () => {
                         <div>
                           <span className="text-sm text-red-800">
                             {project.tavus_video_id 
-                              ? 'Video may be ready on Tavus. Click "Sync Videos" to check.'
+                              ? 'Video may be ready on Tavus. Click "Retry" to fetch it.'
                               : 'Failed to generate video. Please try again or contact support.'
                             }
                           </span>
@@ -546,9 +579,10 @@ const Dashboard = () => {
                           )}
                           <button 
                             onClick={() => retryProject(project.id)}
-                            className="text-sm text-red-600 hover:text-red-700 font-medium"
+                            disabled={retryingProject === project.id}
+                            className="text-sm text-red-600 hover:text-red-700 font-medium disabled:opacity-50"
                           >
-                            Retry
+                            {retryingProject === project.id ? 'Retrying...' : 'Retry'}
                           </button>
                         </div>
                       </div>
