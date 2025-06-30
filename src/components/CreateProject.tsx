@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, Upload, Code, Wand2, Play, Loader2, CheckCircle, AlertCircle, Github, FileText, Zap, Eye, Edit } from 'lucide-react'
+import { ArrowLeft, Upload, Code, Wand2, Play, Loader2, CheckCircle, AlertCircle, Github, FileText, Zap, Eye, Edit, Clock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -27,6 +27,7 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([])
   const [showProcessingDetails, setShowProcessingDetails] = useState(false)
   const [showCodePreview, setShowCodePreview] = useState(false)
+  const [estimatedTime, setEstimatedTime] = useState('2-5 minutes')
   const [formData, setFormData] = useState({
     title: selectedRepository?.name || '',
     description: '',
@@ -98,6 +99,11 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
       scanRepository()
     }
   }, [selectedRepository])
+
+  // Update estimated time when includeFace changes
+  useEffect(() => {
+    setEstimatedTime(formData.includeFace ? '10-15 minutes' : '2-5 minutes')
+  }, [formData.includeFace])
 
   const scanRepository = async () => {
     if (!selectedRepository || !user) return
@@ -201,7 +207,7 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
     ]
 
     if (formData.includeFace) {
-      steps.push({ id: 'face', name: 'Generating Face Video', status: 'pending' })
+      steps.push({ id: 'face', name: 'Generating Face Video (10-15 minutes)', status: 'pending' })
     }
 
     steps.push(
@@ -299,12 +305,20 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
       
       if (result.success) {
         updateProcessingStep('script', 'completed', 'AI script generated')
-        updateProcessingStep('voice', 'completed', 'Voice narration created')
+        updateProcessingStep('voice', 'processing', 'Creating voice narration...')
+        
+        // Show different messages based on face video inclusion
         if (formData.includeFace) {
-          updateProcessingStep('face', 'completed', 'Face video generated')
+          updateProcessingStep('voice', 'completed', 'Voice narration created')
+          updateProcessingStep('face', 'processing', 'Generating face video with Tavus (this takes 10-15 minutes)...')
+          
+          // Start polling for Tavus completion
+          startTavusPolling(projectId)
+        } else {
+          updateProcessingStep('voice', 'completed', 'Voice narration created')
+          updateProcessingStep('combine', 'completed', 'Video elements combined')
+          updateProcessingStep('finalize', 'completed', 'Video processing complete!')
         }
-        updateProcessingStep('combine', 'completed', 'Video elements combined')
-        updateProcessingStep('finalize', 'completed', 'Video processing complete!')
       } else {
         throw new Error(result.error || 'Processing failed')
       }
@@ -324,6 +338,54 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
         .update({ status: 'failed' })
         .eq('id', projectId)
     }
+  }
+
+  const startTavusPolling = async (projectId: string) => {
+    const pollInterval = 30000 // 30 seconds
+    const maxPolls = 40 // 20 minutes max
+    let pollCount = 0
+
+    const poll = async () => {
+      try {
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tavus-poll?projectId=${projectId}`, {
+          headers: {
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          
+          if (data.status === 'completed' && data.videoUrl) {
+            updateProcessingStep('face', 'completed', 'Face video generation completed!')
+            updateProcessingStep('combine', 'completed', 'Video elements combined')
+            updateProcessingStep('finalize', 'completed', 'Video processing complete!')
+            return
+          } else if (data.tavusStatus === 'failed') {
+            updateProcessingStep('face', 'error', 'Face video generation failed')
+            return
+          } else {
+            const timeElapsed = Math.round((pollCount * pollInterval) / 60000)
+            updateProcessingStep('face', 'processing', 
+              `Generating face video... (${timeElapsed} minutes elapsed, typically takes 10-15 minutes)`
+            )
+          }
+        }
+
+        pollCount++
+        if (pollCount < maxPolls) {
+          setTimeout(poll, pollInterval)
+        } else {
+          updateProcessingStep('face', 'error', 'Face video generation timed out')
+        }
+      } catch (error) {
+        console.error('Polling error:', error)
+        updateProcessingStep('face', 'error', 'Error checking video status')
+      }
+    }
+
+    // Start polling after a short delay
+    setTimeout(poll, pollInterval)
   }
 
   const renderRepositoryInfo = () => {
@@ -662,9 +724,37 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
           />
           <div className="flex-1">
             <div className="font-medium text-gray-900">Include Face-Talking Avatar</div>
-            <div className="text-sm text-gray-500">Add a realistic AI-generated presenter</div>
+            <div className="text-sm text-gray-500">Add a realistic AI-generated presenter (takes 10-15 minutes)</div>
           </div>
         </label>
+      </div>
+
+      {/* Time Estimate Warning */}
+      <div className={`rounded-xl p-4 border ${
+        formData.includeFace 
+          ? 'bg-yellow-50 border-yellow-200' 
+          : 'bg-green-50 border-green-200'
+      }`}>
+        <div className="flex items-center space-x-2">
+          <Clock className={`h-5 w-5 ${
+            formData.includeFace ? 'text-yellow-600' : 'text-green-600'
+          }`} />
+          <div>
+            <div className={`font-medium ${
+              formData.includeFace ? 'text-yellow-800' : 'text-green-800'
+            }`}>
+              Estimated Generation Time: {estimatedTime}
+            </div>
+            <div className={`text-sm ${
+              formData.includeFace ? 'text-yellow-700' : 'text-green-700'
+            }`}>
+              {formData.includeFace 
+                ? 'Face video generation with Tavus typically takes 10-15 minutes for high-quality results'
+                : 'Audio-only generation is much faster, typically completing in 2-5 minutes'
+              }
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl p-6 border border-purple-200">
@@ -699,6 +789,10 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
               ].filter(Boolean).join(', ') || 'Voice Only'}
             </span>
           </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Estimated Time:</span>
+            <span className="font-medium text-gray-900">{estimatedTime}</span>
+          </div>
           {repoAnalysis && (
             <div className="flex justify-between">
               <span className="text-gray-600">Repository Analysis:</span>
@@ -725,7 +819,7 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
           {selectedRepository 
             ? `Our AI is analyzing your ${selectedRepository.name} repository and creating a professional demo video.`
             : 'Our AI is working hard to create your professional demo video.'
-          } This usually takes 2-5 minutes.
+          } {formData.includeFace ? 'This usually takes 10-15 minutes with face video generation.' : 'This usually takes 2-5 minutes.'}
         </p>
       </div>
 
@@ -904,7 +998,7 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
               ) : (
                 <>
                   <Wand2 className="h-5 w-5" />
-                  <span>Generate Demo Video</span>
+                  <span>Generate Demo Video ({estimatedTime})</span>
                 </>
               )}
             </button>

@@ -78,19 +78,25 @@ Deno.serve(async (req) => {
       throw new Error(`Database error: ${statusError.message}`)
     }
 
-    // Return immediate response to prevent CORS timeout
-    // The actual processing will continue in the background
-    log('RESPONSE', '✅ Returning immediate success response to prevent CORS timeout')
+    // Return immediate response with proper time estimates
+    log('RESPONSE', '✅ Returning immediate success response')
     
     // Start background processing (don't await)
     processVideoInBackground(supabaseClient, projectId, formData)
 
+    // Determine estimated time based on features
+    const estimatedTime = formData.includeFace ? '10-15 minutes' : '2-5 minutes'
+    const message = formData.includeFace 
+      ? 'Demo video generation started! Face video generation with Tavus typically takes 10-15 minutes. You can check back later or we\'ll update the status automatically.'
+      : 'Demo video generation started! Processing will complete in 2-5 minutes.'
+
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: 'Demo video generation started successfully! Processing will continue in the background.',
+        message: message,
         projectId: projectId,
-        estimatedTime: '2-5 minutes'
+        estimatedTime: estimatedTime,
+        includeFace: formData.includeFace
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -160,10 +166,13 @@ async function processVideoInBackground(supabaseClient: any, projectId: string, 
     
     // Step 3: Generate face video using Tavus (if enabled)
     let faceVideoUrl = null
+    let tavusVideoId = null
     if (formData.includeFace) {
-      log('FACE', '👤 Starting face video generation with Tavus')
-      faceVideoUrl = await generateFaceVideo(script, audioUrl, projectId)
-      log('FACE', '✅ Face video generation completed', { faceVideoUrl })
+      log('FACE', '👤 Starting face video generation with Tavus (10-15 minutes expected)')
+      const tavusResult = await generateFaceVideo(script, audioUrl, projectId)
+      faceVideoUrl = tavusResult.videoUrl
+      tavusVideoId = tavusResult.videoId
+      log('FACE', '✅ Face video generation completed', { faceVideoUrl, tavusVideoId })
     } else {
       log('FACE', '⏭️ Skipping face video generation (disabled by user)')
     }
@@ -181,15 +190,22 @@ async function processVideoInBackground(supabaseClient: any, projectId: string, 
     }, projectId)
     log('COMBINE', '✅ Video combination completed', { finalVideoUrl })
 
-    // Update project with completed video
+    // Update project with completed video and Tavus video ID for polling
     log('DATABASE', '💾 Updating project with completed video')
+    const updateData: any = {
+      video_url: finalVideoUrl,
+      status: 'completed',
+      updated_at: new Date().toISOString()
+    }
+    
+    // Store Tavus video ID for future polling if needed
+    if (tavusVideoId) {
+      updateData.tavus_video_id = tavusVideoId
+    }
+
     const { error: updateError } = await supabaseClient
       .from('projects')
-      .update({
-        video_url: finalVideoUrl,
-        status: 'completed',
-        updated_at: new Date().toISOString()
-      })
+      .update(updateData)
       .eq('id', projectId)
 
     if (updateError) {
@@ -216,7 +232,8 @@ async function processVideoInBackground(supabaseClient: any, projectId: string, 
 
     log('SUCCESS', '🎉 Background demo generation completed successfully!', {
       projectId,
-      finalVideoUrl
+      finalVideoUrl,
+      tavusVideoId
     })
 
   } catch (error) {
@@ -539,7 +556,7 @@ async function generateVoice(script: string, voiceStyle: string, projectId: stri
   return publicUrl
 }
 
-async function generateFaceVideo(script: string, audioUrl: string, projectId: string): Promise<string> {
+async function generateFaceVideo(script: string, audioUrl: string, projectId: string): Promise<{ videoUrl: string, videoId: string }> {
   log('FACE', '🔍 Checking Tavus API configuration')
   
   const tavusApiKey = Deno.env.get('TAVUS_API_KEY')
@@ -547,7 +564,7 @@ async function generateFaceVideo(script: string, audioUrl: string, projectId: st
   
   if (!tavusApiKey) {
     log('WARNING', '⚠️ Tavus API key not configured, skipping face video generation')
-    return audioUrl // Return audio URL as fallback
+    return { videoUrl: audioUrl, videoId: '' } // Return audio URL as fallback
   }
 
   if (!tavusReplicaId) {
@@ -555,7 +572,7 @@ async function generateFaceVideo(script: string, audioUrl: string, projectId: st
     throw new Error('TAVUS_REPLICA_ID is required for face video generation. Please add your replica UUID from Tavus dashboard to your environment variables.')
   }
 
-  log('FACE', '🎬 Starting Tavus video generation', { replicaId: tavusReplicaId })
+  log('FACE', '🎬 Starting Tavus video generation (10-15 minutes expected)', { replicaId: tavusReplicaId })
   const response = await fetch('https://tavusapi.com/v2/videos', {
     method: 'POST',
     headers: {
@@ -586,15 +603,15 @@ async function generateFaceVideo(script: string, audioUrl: string, projectId: st
   const data = await response.json()
   const videoId = data.video_id
   
-  log('FACE', '⏳ Starting video generation polling', { videoId })
+  log('FACE', '⏳ Starting extended video generation polling (10-15 minutes)', { videoId })
   
-  // Poll for completion - reduced time for 1-minute videos
+  // Extended polling for longer generation times
   let attempts = 0
-  const maxAttempts = 20 // 3-4 minutes max for shorter videos
-  const pollInterval = 10000 // 10 seconds
+  const maxAttempts = 60 // 15 minutes max (15 seconds * 60 = 15 minutes)
+  const pollInterval = 15000 // 15 seconds
 
   while (attempts < maxAttempts) {
-    log('FACE', `🔄 Polling attempt ${attempts + 1}/${maxAttempts}`)
+    log('FACE', `🔄 Polling attempt ${attempts + 1}/${maxAttempts} (${Math.round((attempts * pollInterval) / 60000)} minutes elapsed)`)
     
     await new Promise(resolve => setTimeout(resolve, pollInterval))
     
@@ -608,14 +625,16 @@ async function generateFaceVideo(script: string, audioUrl: string, projectId: st
       const statusData = await statusResponse.json()
       log('FACE', '📊 Video status update', { 
         status: statusData.status,
-        progress: statusData.progress || 'N/A'
+        progress: statusData.progress || 'N/A',
+        timeElapsed: `${Math.round((attempts * pollInterval) / 60000)} minutes`
       })
       
       if (statusData.status === 'completed') {
         log('FACE', '✅ Tavus video generation completed!', { 
-          downloadUrl: statusData.download_url 
+          downloadUrl: statusData.download_url,
+          totalTime: `${Math.round((attempts * pollInterval) / 60000)} minutes`
         })
-        return statusData.download_url
+        return { videoUrl: statusData.download_url, videoId: videoId }
       } else if (statusData.status === 'failed') {
         log('ERROR', '❌ Tavus video generation failed', statusData)
         throw new Error('Tavus video generation failed')
@@ -629,8 +648,8 @@ async function generateFaceVideo(script: string, audioUrl: string, projectId: st
     attempts++
   }
 
-  log('ERROR', '⏰ Tavus video generation timed out')
-  throw new Error('Tavus video generation timed out')
+  log('ERROR', '⏰ Tavus video generation timed out after 15 minutes')
+  throw new Error('Tavus video generation timed out after 15 minutes')
 }
 
 async function combineVideo(params: {
