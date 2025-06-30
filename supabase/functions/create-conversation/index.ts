@@ -87,14 +87,12 @@ Deno.serve(async (req) => {
         replica_id: tavusReplicaId,
         conversation_name: `Code Discussion: ${title}`,
         callback_url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/conversation-webhook`,
+        system_prompt: conversationPrompt,
         properties: {
           max_call_duration: 1800, // 30 minutes
           participant_left_timeout: 120, // 2 minutes
           participant_absent_timeout: 300, // 5 minutes
           enable_recording: false
-        },
-        conversation_config: {
-          system_prompt: conversationPrompt
         }
       }),
     })
