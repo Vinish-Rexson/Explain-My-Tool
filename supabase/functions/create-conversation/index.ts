@@ -75,8 +75,6 @@ Deno.serve(async (req) => {
     // Create Tavus conversation
     log('TAVUS', '🎬 Creating Tavus conversation session')
     
-    const conversationPrompt = createConversationPrompt(title, codeSnippet)
-    
     const response = await fetch('https://tavusapi.com/v2/conversations', {
       method: 'POST',
       headers: {
@@ -87,7 +85,6 @@ Deno.serve(async (req) => {
         replica_id: tavusReplicaId,
         conversation_name: `Code Discussion: ${title}`,
         callback_url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/conversation-webhook`,
-        system_prompt: conversationPrompt,
         properties: {
           max_call_duration: 1800, // 30 minutes
           participant_left_timeout: 120, // 2 minutes
@@ -167,37 +164,6 @@ Deno.serve(async (req) => {
     )
   }
 })
-
-function createConversationPrompt(title: string, codeSnippet: string): string {
-  return `You are an expert software engineer and code mentor having a live conversation about the following code project:
-
-PROJECT: ${title}
-
-CODE TO DISCUSS:
-\`\`\`
-${codeSnippet}
-\`\`\`
-
-CONVERSATION GUIDELINES:
-- You are having a natural, interactive conversation about this specific code
-- Be friendly, knowledgeable, and encouraging
-- Answer questions about the code implementation, design patterns, best practices
-- Explain complex concepts in simple terms
-- Suggest improvements and alternatives when appropriate
-- Ask clarifying questions to better understand what the user wants to learn
-- Keep responses conversational and engaging (not too formal)
-- Focus on practical insights and real-world applications
-- If asked about something not related to the code, gently redirect back to the code discussion
-
-CONVERSATION STYLE:
-- Speak naturally as if you're pair programming with a colleague
-- Use "we" and "let's" to make it collaborative
-- Be enthusiastic about good code practices
-- Acknowledge when something is well-implemented
-- Offer constructive feedback for improvements
-
-Remember: This is a live conversation, so keep responses concise but informative. The user can ask follow-up questions for more detail.`
-}
 
 // Import createClient function
 import { createClient } from 'npm:@supabase/supabase-js@2'
