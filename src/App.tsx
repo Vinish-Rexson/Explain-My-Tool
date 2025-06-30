@@ -8,6 +8,7 @@ import Features from './components/Features';
 import Pricing from './components/Pricing';
 import Footer from './components/Footer';
 import Dashboard from './components/Dashboard';
+import SignIn from './components/SignIn';
 
 const LandingPage = () => (
   <>
@@ -33,23 +34,34 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     );
   }
   
-  return user ? <>{children}</> : <Navigate to="/" replace />;
+  return user ? <>{children}</> : <Navigate to="/signin" replace />;
 };
 
 const AppContent = () => {
+  const { user } = useAuth();
+
   return (
     <div className="min-h-screen bg-white">
-      <Header />
       <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route 
-          path="/dashboard" 
-          element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } 
-        />
+        <Route path="/signin" element={
+          user ? <Navigate to="/dashboard" replace /> : <SignIn />
+        } />
+        <Route path="/*" element={
+          <>
+            <Header />
+            <Routes>
+              <Route path="/" element={<LandingPage />} />
+              <Route 
+                path="/dashboard" 
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                } 
+              />
+            </Routes>
+          </>
+        } />
       </Routes>
     </div>
   );
