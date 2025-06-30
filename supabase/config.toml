@@ -44,6 +44,15 @@ verify_jwt = false
 [functions.process-demo]
 verify_jwt = false
 
+[functions.create-conversation]
+verify_jwt = false
+
+[functions.conversation-message]
+verify_jwt = false
+
+[functions.end-conversation]
+verify_jwt = false
+
 [edge_runtime]
 policy = "per_worker"
 

@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react'
-import { Plus, Video, BarChart3, Settings, Github, Play, Edit, Trash2, Eye, Share2, Clock, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { Plus, Video, BarChart3, Settings, Github, Play, Edit, Trash2, Eye, Share2, Clock, CheckCircle, XCircle, Loader2, MessageCircle } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase, Project } from '../lib/supabase'
 import CreateProject from './CreateProject'
+import LiveConversation from './LiveConversation'
 
 const Dashboard = () => {
   const { user, profile } = useAuth()
@@ -10,6 +11,8 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true)
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
+  const [showLiveConversation, setShowLiveConversation] = useState(false)
+  const [conversationProject, setConversationProject] = useState<Project | null>(null)
 
   useEffect(() => {
     if (user) {
@@ -67,6 +70,11 @@ const Dashboard = () => {
       console.error('Error deleting project:', error)
       alert('Failed to delete project')
     }
+  }
+
+  const startLiveConversation = (project: Project) => {
+    setConversationProject(project)
+    setShowLiveConversation(true)
   }
 
   const getStatusIcon = (status: string) => {
@@ -268,6 +276,16 @@ const Dashboard = () => {
                     </div>
                     
                     <div className="flex items-center space-x-2 ml-4">
+                      {/* Live Conversation Button */}
+                      <button 
+                        onClick={() => startLiveConversation(project)}
+                        className="flex items-center space-x-1 px-3 py-2 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-colors"
+                        title="Start live conversation about this code"
+                      >
+                        <MessageCircle className="h-4 w-4" />
+                        <span>Chat</span>
+                      </button>
+                      
                       {project.status === 'completed' && project.video_url && (
                         <button 
                           onClick={() => window.open(project.video_url, '_blank')}
@@ -334,6 +352,19 @@ const Dashboard = () => {
           )}
         </div>
       </div>
+
+      {/* Live Conversation Modal */}
+      {showLiveConversation && conversationProject && (
+        <LiveConversation
+          projectId={conversationProject.id}
+          codeSnippet={conversationProject.code_snippet}
+          title={conversationProject.title}
+          onClose={() => {
+            setShowLiveConversation(false)
+            setConversationProject(null)
+          }}
+        />
+      )}
     </div>
   )
 }
