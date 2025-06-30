@@ -49,6 +49,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (session?.user) {
         fetchOrCreateProfile(session.user)
       } else {
+        // Important: Set loading to false when there's no user
         setLoading(false)
       }
     })
@@ -57,6 +58,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event, session?.user?.email)
+      
       setSession(session)
       setUser(session?.user ?? null)
       
@@ -72,6 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         await fetchOrCreateProfile(session.user)
       } else {
+        // Important: Clear profile and set loading to false when user signs out
         setProfile(null)
         setLoading(false)
       }
@@ -82,6 +86,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchOrCreateProfile = async (user: User) => {
     try {
+      setLoading(true) // Set loading when starting profile fetch
+      
       // First try to fetch existing profile
       let { data: profile, error } = await supabase
         .from('profiles')
@@ -142,6 +148,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updated_at: new Date().toISOString(),
       })
     } finally {
+      // Always set loading to false after profile operations complete
       setLoading(false)
     }
   }
