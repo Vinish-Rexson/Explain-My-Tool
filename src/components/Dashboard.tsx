@@ -15,6 +15,7 @@ const Dashboard = () => {
   const [showLiveConversation, setShowLiveConversation] = useState(false)
   const [conversationProject, setConversationProject] = useState<Project | null>(null)
   const [showGitHubRepos, setShowGitHubRepos] = useState(false)
+  const [selectedRepository, setSelectedRepository] = useState<any>(null)
 
   useEffect(() => {
     if (user) {
@@ -80,10 +81,14 @@ const Dashboard = () => {
   }
 
   const handleRepositorySelect = (repo: any) => {
-    // Pre-fill create project form with repository data
+    setSelectedRepository(repo)
     setShowGitHubRepos(false)
     setShowCreateProject(true)
-    // You could pass repo data to CreateProject component
+  }
+
+  const handleCreateProjectBack = () => {
+    setShowCreateProject(false)
+    setSelectedRepository(null)
   }
 
   const getStatusIcon = (status: string) => {
@@ -130,7 +135,10 @@ const Dashboard = () => {
     return (
       <div className="min-h-screen bg-gray-50 py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <CreateProject onBack={() => setShowCreateProject(false)} />
+          <CreateProject 
+            onBack={handleCreateProjectBack} 
+            selectedRepository={selectedRepository}
+          />
         </div>
       </div>
     )

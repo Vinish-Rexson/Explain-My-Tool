@@ -1,11 +1,12 @@
-import React, { useState } from 'react'
-import { ArrowLeft, Upload, Code, Wand2, Play, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { ArrowLeft, Upload, Code, Wand2, Play, Loader2, CheckCircle, AlertCircle, Github, FileText, Zap } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
 interface CreateProjectProps {
   onBack: () => void
+  selectedRepository?: any // Repository data from GitHub
 }
 
 interface ProcessingStep {
@@ -16,22 +17,27 @@ interface ProcessingStep {
   timestamp?: string
 }
 
-const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
+const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepository }) => {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [scanningRepo, setScanningRepo] = useState(false)
+  const [repoAnalysis, setRepoAnalysis] = useState<any>(null)
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([])
   const [showProcessingDetails, setShowProcessingDetails] = useState(false)
   const [formData, setFormData] = useState({
-    title: '',
-    description: '',
+    title: selectedRepository?.name || '',
+    description: selectedRepository?.description || '',
     codeSnippet: '',
-    language: 'javascript',
+    language: selectedRepository?.language?.toLowerCase() || 'javascript',
     demoType: 'walkthrough', // walkthrough, pitch, tutorial
     voiceStyle: 'professional', // professional, casual, enthusiastic
     includeCode: true,
-    includeFace: true
+    includeFace: true,
+    isFromRepository: !!selectedRepository,
+    repositoryId: selectedRepository?.id || null,
+    repositoryUrl: selectedRepository?.html_url || null
   })
 
   const languages = [
@@ -84,6 +90,86 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
       description: 'Energetic tone for product launches'
     }
   ]
+
+  // Scan repository when component mounts with selected repository
+  useEffect(() => {
+    if (selectedRepository && !repoAnalysis) {
+      scanRepository()
+    }
+  }, [selectedRepository])
+
+  const scanRepository = async () => {
+    if (!selectedRepository || !user) return
+
+    setScanningRepo(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('No active session')
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/github-scan`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          repositoryId: selectedRepository.id,
+          maxFiles: 10
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to scan repository')
+      }
+
+      const data = await response.json()
+      setRepoAnalysis(data.codeAnalysis)
+      
+      // Auto-fill form with repository analysis
+      setFormData(prev => ({
+        ...prev,
+        title: selectedRepository.name,
+        description: data.codeAnalysis.summary,
+        language: data.codeAnalysis.primaryLanguage.toLowerCase(),
+        codeSnippet: generateCodeSnippet(data.codeAnalysis)
+      }))
+
+    } catch (error: any) {
+      console.error('Error scanning repository:', error)
+      alert(`Failed to scan repository: ${error.message}`)
+    } finally {
+      setScanningRepo(false)
+    }
+  }
+
+  const generateCodeSnippet = (analysis: any) => {
+    // Combine the most important files into a representative code snippet
+    const importantFiles = analysis.files
+      .filter((file: any) => file.lines < 100) // Focus on smaller, more readable files
+      .slice(0, 3) // Take top 3 files
+    
+    let snippet = `// ${analysis.summary}\n\n`
+    
+    if (analysis.keyFeatures.length > 0) {
+      snippet += `// Key Features: ${analysis.keyFeatures.join(', ')}\n\n`
+    }
+    
+    importantFiles.forEach((file: any, index: number) => {
+      snippet += `// File: ${file.path}\n`
+      snippet += file.content.split('\n').slice(0, 20).join('\n') // First 20 lines
+      if (file.lines > 20) {
+        snippet += '\n// ... (truncated)\n'
+      }
+      if (index < importantFiles.length - 1) {
+        snippet += '\n\n'
+      }
+    })
+    
+    return snippet
+  }
 
   const initializeProcessingSteps = () => {
     const steps: ProcessingStep[] = [
@@ -153,7 +239,7 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
 
       // Navigate back to dashboard
       navigate('/dashboard')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating project:', error)
       updateProcessingStep('init', 'error', `Failed to create project: ${error.message}`)
       alert('Failed to create project. Please try again.')
@@ -175,7 +261,10 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
         },
         body: JSON.stringify({
           projectId,
-          formData
+          formData: {
+            ...formData,
+            repositoryAnalysis: repoAnalysis // Include repository analysis for better AI processing
+          }
         })
       })
 
@@ -197,7 +286,7 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
       } else {
         throw new Error(result.error || 'Processing failed')
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error starting AI processing:', error)
       
       // Update all remaining steps to error
@@ -215,8 +304,71 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
     }
   }
 
+  const renderRepositoryInfo = () => {
+    if (!selectedRepository) return null
+
+    return (
+      <div className="mb-6 bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl p-6 border border-gray-200">
+        <div className="flex items-start space-x-4">
+          <div className="bg-gray-900 p-2 rounded-lg">
+            <Github className="h-6 w-6 text-white" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Creating Demo from Repository
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="font-medium text-gray-700">Repository:</span>
+                <p className="text-gray-600">{selectedRepository.full_name}</p>
+              </div>
+              <div>
+                <span className="font-medium text-gray-700">Language:</span>
+                <p className="text-gray-600">{selectedRepository.language || 'Mixed'}</p>
+              </div>
+              <div>
+                <span className="font-medium text-gray-700">Stars:</span>
+                <p className="text-gray-600">{selectedRepository.stargazers_count}</p>
+              </div>
+              <div>
+                <span className="font-medium text-gray-700">Forks:</span>
+                <p className="text-gray-600">{selectedRepository.forks_count}</p>
+              </div>
+            </div>
+            
+            {scanningRepo && (
+              <div className="mt-4 flex items-center space-x-2 text-blue-600">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Scanning repository code...</span>
+              </div>
+            )}
+            
+            {repoAnalysis && (
+              <div className="mt-4 space-y-2">
+                <div className="flex items-center space-x-2 text-green-600">
+                  <CheckCircle className="h-4 w-4" />
+                  <span className="text-sm font-medium">Repository scanned successfully!</span>
+                </div>
+                <div className="text-sm text-gray-600">
+                  <p><strong>Files analyzed:</strong> {repoAnalysis.files.length}</p>
+                  <p><strong>Total lines:</strong> {repoAnalysis.totalLines.toLocaleString()}</p>
+                  <p><strong>Primary language:</strong> {repoAnalysis.primaryLanguage}</p>
+                  {repoAnalysis.keyFeatures.length > 0 && (
+                    <p><strong>Key features:</strong> {repoAnalysis.keyFeatures.join(', ')}</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const renderStep1 = () => (
     <div className="space-y-6">
+      {renderRepositoryInfo()}
+      
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           Project Title *
@@ -242,6 +394,11 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
           rows={3}
           placeholder="Brief description of what this feature does..."
         />
+        {repoAnalysis && (
+          <p className="mt-2 text-sm text-gray-500">
+            ✨ Auto-generated from repository analysis
+          </p>
+        )}
       </div>
 
       <div>
@@ -261,22 +418,48 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
         </select>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Code Snippet *
-        </label>
-        <textarea
-          value={formData.codeSnippet}
-          onChange={(e) => handleInputChange('codeSnippet', e.target.value)}
-          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-colors font-mono text-sm"
-          rows={12}
-          placeholder="Paste your code here..."
-          required
-        />
-        <p className="mt-2 text-sm text-gray-500">
-          Paste the main code you want to explain in your demo video
-        </p>
-      </div>
+      {!selectedRepository && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Code Snippet *
+          </label>
+          <textarea
+            value={formData.codeSnippet}
+            onChange={(e) => handleInputChange('codeSnippet', e.target.value)}
+            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-colors font-mono text-sm"
+            rows={12}
+            placeholder="Paste your code here..."
+            required
+          />
+          <p className="mt-2 text-sm text-gray-500">
+            Paste the main code you want to explain in your demo video
+          </p>
+        </div>
+      )}
+
+      {selectedRepository && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Repository Code Analysis
+          </label>
+          <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+            <div className="flex items-center space-x-2 mb-3">
+              <FileText className="h-5 w-5 text-gray-600" />
+              <span className="font-medium text-gray-900">Auto-generated from repository scan</span>
+            </div>
+            <textarea
+              value={formData.codeSnippet}
+              onChange={(e) => handleInputChange('codeSnippet', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-colors font-mono text-xs"
+              rows={8}
+              placeholder="Repository code will be analyzed automatically..."
+            />
+            <p className="mt-2 text-xs text-gray-500">
+              ✨ This code snippet was automatically generated from your repository's most important files. You can edit it if needed.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 
@@ -414,6 +597,12 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
         <h4 className="font-semibold text-gray-900 mb-3">Preview Settings</h4>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
+            <span className="text-gray-600">Source:</span>
+            <span className="font-medium text-gray-900">
+              {selectedRepository ? `GitHub Repository (${selectedRepository.name})` : 'Manual Code Input'}
+            </span>
+          </div>
+          <div className="flex justify-between">
             <span className="text-gray-600">Demo Type:</span>
             <span className="font-medium text-gray-900 capitalize">{formData.demoType}</span>
           </div>
@@ -436,6 +625,14 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
               ].filter(Boolean).join(', ') || 'Voice Only'}
             </span>
           </div>
+          {repoAnalysis && (
+            <div className="flex justify-between">
+              <span className="text-gray-600">Repository Analysis:</span>
+              <span className="font-medium text-gray-900">
+                {repoAnalysis.files.length} files, {repoAnalysis.totalLines} lines
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -451,7 +648,10 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
           Generating Your Demo Video
         </h3>
         <p className="text-gray-600">
-          Our AI is working hard to create your professional demo video. This usually takes 2-5 minutes.
+          {selectedRepository 
+            ? `Our AI is analyzing your ${selectedRepository.name} repository and creating a professional demo video.`
+            : 'Our AI is working hard to create your professional demo video.'
+          } This usually takes 2-5 minutes.
         </p>
       </div>
 
@@ -509,7 +709,7 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
   const isStepValid = () => {
     switch (step) {
       case 1:
-        return formData.title.trim() && formData.codeSnippet.trim()
+        return formData.title.trim() && (formData.codeSnippet.trim() || selectedRepository)
       case 2:
         return formData.demoType && formData.voiceStyle
       case 3:
@@ -571,12 +771,15 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
       <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            {step === 1 && 'Project Details'}
+            {step === 1 && (selectedRepository ? 'Repository Analysis' : 'Project Details')}
             {step === 2 && 'Demo Configuration'}
             {step === 3 && 'Final Settings'}
           </h2>
           <p className="text-gray-600">
-            {step === 1 && 'Tell us about your project and paste your code'}
+            {step === 1 && (selectedRepository 
+              ? 'Review the automatically analyzed repository code and project details'
+              : 'Tell us about your project and paste your code'
+            )}
             {step === 2 && 'Choose how you want your demo to be presented'}
             {step === 3 && 'Review and customize your video generation settings'}
           </p>
@@ -598,10 +801,20 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
           {step < 3 ? (
             <button
               onClick={() => setStep(step + 1)}
-              disabled={!isStepValid()}
-              className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl hover:from-purple-700 hover:to-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!isStepValid() || scanningRepo}
+              className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl hover:from-purple-700 hover:to-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
-              Next Step
+              {scanningRepo ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>Scanning Repository...</span>
+                </>
+              ) : (
+                <>
+                  <span>Next Step</span>
+                  <Zap className="h-5 w-5" />
+                </>
+              )}
             </button>
           ) : (
             <button
