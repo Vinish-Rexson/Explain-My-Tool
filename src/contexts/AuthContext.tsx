@@ -31,157 +31,131 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    console.log('AuthProvider: Initializing auth state')
+    let mounted = true
 
-    // Handle OAuth redirect by cleaning up the URL
-    const handleOAuthRedirect = () => {
-      const hash = window.location.hash
-      if (hash && hash.includes('access_token')) {
-        window.history.replaceState(null, '', window.location.pathname)
-      }
-    }
-
-    handleOAuthRedirect()
-
-    // Get initial session
     const initializeAuth = async () => {
       try {
+        // Get initial session
         const { data: { session }, error } = await supabase.auth.getSession()
         
+        if (!mounted) return
+
         if (error) {
-          console.error('AuthProvider: Error getting initial session:', error)
+          console.error('Auth error:', error)
           setLoading(false)
           return
         }
 
-        console.log('AuthProvider: Initial session check', { 
-          hasSession: !!session, 
-          userEmail: session?.user?.email
-        })
-        
         setSession(session)
         setUser(session?.user ?? null)
         
         if (session?.user) {
-          console.log('AuthProvider: User found, fetching profile...')
-          await fetchOrCreateProfile(session.user)
-        } else {
-          console.log('AuthProvider: No user session')
+          // Fetch profile in background, don't block loading
+          fetchProfile(session.user)
+        }
+        
+        // Always set loading to false after initial check
+        setLoading(false)
+      } catch (error) {
+        console.error('Auth initialization error:', error)
+        if (mounted) {
           setLoading(false)
         }
-      } catch (error) {
-        console.error('AuthProvider: Error initializing auth:', error)
-        setLoading(false)
       }
     }
 
+    const fetchProfile = async (user: User) => {
+      try {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single()
+
+        if (!mounted) return
+
+        if (error && error.code === 'PGRST116') {
+          // Profile doesn't exist, create it
+          const newProfile = {
+            id: user.id,
+            email: user.email!,
+            full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
+            avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
+            subscription_tier: 'free' as const,
+          }
+
+          const { data: createdProfile, error: createError } = await supabase
+            .from('profiles')
+            .insert([newProfile])
+            .select()
+            .single()
+
+          if (!mounted) return
+
+          if (createError) {
+            console.error('Error creating profile:', createError)
+            setProfile(newProfile)
+          } else {
+            setProfile(createdProfile)
+          }
+        } else if (error) {
+          console.error('Error fetching profile:', error)
+          // Set fallback profile
+          setProfile({
+            id: user.id,
+            email: user.email!,
+            full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
+            avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
+            subscription_tier: 'free',
+            github_username: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+        } else {
+          setProfile(profile)
+        }
+      } catch (error) {
+        console.error('Profile fetch error:', error)
+        if (mounted) {
+          // Set fallback profile on error
+          setProfile({
+            id: user.id,
+            email: user.email!,
+            full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
+            avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
+            subscription_tier: 'free',
+            github_username: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+        }
+      }
+    }
+
+    // Initialize auth
     initializeAuth()
 
     // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('AuthProvider: Auth state changed', { 
-        event, 
-        userEmail: session?.user?.email,
-        hasSession: !!session
-      })
-      
+      if (!mounted) return
+
       setSession(session)
       setUser(session?.user ?? null)
       
       if (session?.user) {
-        console.log('AuthProvider: Fetching profile for authenticated user')
-        await fetchOrCreateProfile(session.user)
+        fetchProfile(session.user)
       } else {
-        console.log('AuthProvider: No user, clearing profile')
         setProfile(null)
-        setLoading(false)
       }
     })
 
     return () => {
+      mounted = false
       subscription.unsubscribe()
     }
   }, [])
-
-  const fetchOrCreateProfile = async (user: User) => {
-    console.log('AuthProvider: fetchOrCreateProfile started for user:', user.email)
-    
-    try {
-      setLoading(true)
-      
-      // First try to fetch existing profile
-      let { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single()
-
-      if (error && error.code === 'PGRST116') {
-        console.log('AuthProvider: Profile not found, creating new profile...')
-        // Profile doesn't exist, create it
-        const newProfile = {
-          id: user.id,
-          email: user.email!,
-          full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
-          avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
-          subscription_tier: 'free' as const,
-        }
-
-        const { data: createdProfile, error: createError } = await supabase
-          .from('profiles')
-          .insert([newProfile])
-          .select()
-          .single()
-
-        if (createError) {
-          console.error('AuthProvider: Error creating profile:', createError)
-          // Still set a basic profile to avoid blocking the user
-          setProfile(newProfile)
-        } else {
-          console.log('AuthProvider: Profile created successfully')
-          setProfile(createdProfile)
-        }
-      } else if (error) {
-        console.error('AuthProvider: Error fetching profile:', error)
-        // Create a basic profile object to avoid blocking the user
-        const fallbackProfile = {
-          id: user.id,
-          email: user.email!,
-          full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
-          avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
-          subscription_tier: 'free' as const,
-          github_username: null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }
-        setProfile(fallbackProfile)
-      } else {
-        console.log('AuthProvider: Profile fetched successfully')
-        setProfile(profile)
-      }
-    } catch (error) {
-      console.error('AuthProvider: Error in fetchOrCreateProfile:', error)
-      // Create a fallback profile to avoid blocking the user
-      const fallbackProfile = {
-        id: user.id,
-        email: user.email!,
-        full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
-        avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
-        subscription_tier: 'free' as const,
-        github_username: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }
-      
-      console.log('AuthProvider: Setting fallback profile due to error')
-      setProfile(fallbackProfile)
-    } finally {
-      console.log('AuthProvider: Setting loading to false after profile operations')
-      setLoading(false)
-    }
-  }
 
   const signInWithGoogle = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
@@ -221,7 +195,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async () => {
     const { error } = await supabase.auth.signOut()
     if (error) throw error
-    // Let React Router handle the redirect
   }
 
   const updateProfile = async (updates: Partial<Profile>) => {
