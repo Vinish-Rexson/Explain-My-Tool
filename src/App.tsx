@@ -9,6 +9,7 @@ import Pricing from './components/Pricing';
 import Footer from './components/Footer';
 import Dashboard from './components/Dashboard';
 import SignIn from './components/SignIn';
+import GitHubCallback from './components/GitHubCallback';
 
 const LandingPage = () => (
   <>
@@ -58,6 +59,7 @@ const AppContent = () => {
         <Route path="/signin" element={
           user ? <Navigate to="/dashboard" replace /> : <SignIn />
         } />
+        <Route path="/github-callback" element={<GitHubCallback />} />
         <Route path="/dashboard" element={
           <ProtectedRoute>
             <Header />

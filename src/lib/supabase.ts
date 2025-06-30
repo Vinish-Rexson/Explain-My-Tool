@@ -17,6 +17,7 @@ export interface Profile {
   avatar_url?: string
   subscription_tier: 'free' | 'professional' | 'enterprise'
   github_username?: string
+  github_access_token?: string
   created_at: string
   updated_at: string
 }
@@ -41,4 +42,22 @@ export interface Analytics {
   completion_rate: number
   created_at: string
   updated_at: string
+}
+
+export interface Repository {
+  id: string
+  user_id: string
+  github_id: number
+  name: string
+  full_name: string
+  description?: string
+  html_url: string
+  clone_url: string
+  language?: string
+  stargazers_count: number
+  forks_count: number
+  is_private: boolean
+  created_at: string
+  updated_at: string
+  synced_at: string
 }

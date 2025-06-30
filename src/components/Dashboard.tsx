@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase, Project } from '../lib/supabase'
 import CreateProject from './CreateProject'
 import LiveConversation from './LiveConversation'
+import GitHubConnect from './GitHubConnect'
 
 const Dashboard = () => {
   const { user, profile } = useAuth()
@@ -13,6 +14,7 @@ const Dashboard = () => {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [showLiveConversation, setShowLiveConversation] = useState(false)
   const [conversationProject, setConversationProject] = useState<Project | null>(null)
+  const [showGitHubRepos, setShowGitHubRepos] = useState(false)
 
   useEffect(() => {
     if (user) {
@@ -77,6 +79,13 @@ const Dashboard = () => {
     setShowLiveConversation(true)
   }
 
+  const handleRepositorySelect = (repo: any) => {
+    // Pre-fill create project form with repository data
+    setShowGitHubRepos(false)
+    setShowCreateProject(true)
+    // You could pass repo data to CreateProject component
+  }
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'completed':
@@ -127,6 +136,30 @@ const Dashboard = () => {
     )
   }
 
+  if (showGitHubRepos) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="mb-8">
+            <button
+              onClick={() => setShowGitHubRepos(false)}
+              className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors mb-4"
+            >
+              <span>← Back to Dashboard</span>
+            </button>
+            <h1 className="text-3xl font-bold text-gray-900">
+              Import from GitHub
+            </h1>
+            <p className="text-gray-600 mt-2">
+              Select a repository to create a demo video from your existing code.
+            </p>
+          </div>
+          <GitHubConnect onRepositorySelect={handleRepositorySelect} />
+        </div>
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -152,14 +185,23 @@ const Dashboard = () => {
                 Create compelling demo videos from your code in minutes.
               </p>
             </div>
-            <button 
-              onClick={() => setShowCreateProject(true)}
-              disabled={!canCreateMore}
-              className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Plus className="h-5 w-5" />
-              <span>New Demo</span>
-            </button>
+            <div className="flex items-center space-x-3">
+              <button 
+                onClick={() => setShowGitHubRepos(true)}
+                className="bg-gray-900 text-white px-6 py-3 rounded-lg hover:bg-gray-800 transition-colors flex items-center space-x-2"
+              >
+                <Github className="h-5 w-5" />
+                <span>Import from GitHub</span>
+              </button>
+              <button 
+                onClick={() => setShowCreateProject(true)}
+                disabled={!canCreateMore}
+                className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Plus className="h-5 w-5" />
+                <span>New Demo</span>
+              </button>
+            </div>
           </div>
           
           {!canCreateMore && (
@@ -221,6 +263,13 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* GitHub Integration Section */}
+        {!profile?.github_username && (
+          <div className="mb-8">
+            <GitHubConnect showRepositories={false} />
+          </div>
+        )}
+
         {/* Projects */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="p-6 border-b border-gray-100">
@@ -239,15 +288,24 @@ const Dashboard = () => {
               <Video className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">No demo videos yet</h3>
               <p className="text-gray-600 mb-6">
-                Create your first AI-powered demo video from your code snippet.
+                Create your first AI-powered demo video from your code snippet or import from GitHub.
               </p>
-              <button 
-                onClick={() => setShowCreateProject(true)}
-                className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-2 mx-auto"
-              >
-                <Plus className="h-5 w-5" />
-                <span>Create Your First Demo</span>
-              </button>
+              <div className="flex items-center justify-center space-x-4">
+                <button 
+                  onClick={() => setShowCreateProject(true)}
+                  className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-2"
+                >
+                  <Plus className="h-5 w-5" />
+                  <span>Create Your First Demo</span>
+                </button>
+                <button 
+                  onClick={() => setShowGitHubRepos(true)}
+                  className="bg-gray-900 text-white px-6 py-3 rounded-lg hover:bg-gray-800 transition-colors flex items-center space-x-2"
+                >
+                  <Github className="h-5 w-5" />
+                  <span>Import from GitHub</span>
+                </button>
+              </div>
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
