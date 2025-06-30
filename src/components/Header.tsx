@@ -1,5 +1,6 @@
 import React from 'react';
-import { Code2, Github, LogIn } from 'lucide-react';
+import { Code2, Github } from 'lucide-react';
+import AuthButton from './AuthButton';
 
 const Header = () => {
   return (
@@ -30,10 +31,7 @@ const Header = () => {
               <Github className="h-5 w-5" />
               <span className="hidden sm:block">Connect GitHub</span>
             </button>
-            <button className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors">
-              <LogIn className="h-4 w-4" />
-              <span>Sign In</span>
-            </button>
+            <AuthButton />
           </div>
         </div>
       </div>
