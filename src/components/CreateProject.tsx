@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, Upload, Code, Wand2, Play, Loader2, CheckCircle, AlertCircle, Github, FileText, Zap } from 'lucide-react'
+import { ArrowLeft, Upload, Code, Wand2, Play, Loader2, CheckCircle, AlertCircle, Github, FileText, Zap, Eye, Edit } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -26,9 +26,10 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
   const [repoAnalysis, setRepoAnalysis] = useState<any>(null)
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([])
   const [showProcessingDetails, setShowProcessingDetails] = useState(false)
+  const [showCodePreview, setShowCodePreview] = useState(false)
   const [formData, setFormData] = useState({
     title: selectedRepository?.name || '',
-    description: selectedRepository?.description || '',
+    description: '',
     codeSnippet: '',
     language: selectedRepository?.language?.toLowerCase() || 'javascript',
     demoType: 'walkthrough', // walkthrough, pitch, tutorial
@@ -131,9 +132,9 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
       // Auto-fill form with repository analysis
       setFormData(prev => ({
         ...prev,
-        title: selectedRepository.name,
-        description: data.codeAnalysis.summary,
-        language: data.codeAnalysis.primaryLanguage.toLowerCase(),
+        title: selectedRepository.name, // Repository name as title
+        description: selectedRepository.description || data.codeAnalysis.summary, // Use repo description or generated summary
+        language: mapLanguageToOption(data.codeAnalysis.primaryLanguage),
         codeSnippet: generateCodeSnippet(data.codeAnalysis)
       }))
 
@@ -145,24 +146,45 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
     }
   }
 
+  const mapLanguageToOption = (language: string): string => {
+    const mapping: { [key: string]: string } = {
+      'JavaScript': 'javascript',
+      'TypeScript': 'typescript',
+      'Python': 'python',
+      'Java': 'java',
+      'C#': 'csharp',
+      'Go': 'go',
+      'Rust': 'rust',
+      'PHP': 'php',
+      'Vue': 'vue',
+      'React': 'react'
+    }
+    return mapping[language] || language.toLowerCase()
+  }
+
   const generateCodeSnippet = (analysis: any) => {
     // Combine the most important files into a representative code snippet
     const importantFiles = analysis.files
-      .filter((file: any) => file.lines < 100) // Focus on smaller, more readable files
-      .slice(0, 3) // Take top 3 files
+      .filter((file: any) => file.lines < 150) // Focus on readable files
+      .slice(0, 4) // Take top 4 files
     
-    let snippet = `// ${analysis.summary}\n\n`
+    let snippet = `// Repository: ${selectedRepository.name}\n`
+    snippet += `// ${analysis.summary}\n\n`
     
     if (analysis.keyFeatures.length > 0) {
       snippet += `// Key Features: ${analysis.keyFeatures.join(', ')}\n\n`
     }
     
     importantFiles.forEach((file: any, index: number) => {
-      snippet += `// File: ${file.path}\n`
-      snippet += file.content.split('\n').slice(0, 20).join('\n') // First 20 lines
-      if (file.lines > 20) {
-        snippet += '\n// ... (truncated)\n'
+      snippet += `// ===== ${file.path} =====\n`
+      const lines = file.content.split('\n')
+      const previewLines = lines.slice(0, 25) // First 25 lines
+      snippet += previewLines.join('\n')
+      
+      if (file.lines > 25) {
+        snippet += '\n// ... (additional code continues)\n'
       }
+      
       if (index < importantFiles.length - 1) {
         snippet += '\n\n'
       }
@@ -315,7 +337,7 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
           </div>
           <div className="flex-1">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Creating Demo from Repository
+              Creating Demo from GitHub Repository
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div>
@@ -380,23 +402,32 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
           className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-colors"
           placeholder="e.g., User Authentication System"
           required
+          readOnly={!!selectedRepository}
         />
+        {selectedRepository && (
+          <p className="mt-2 text-sm text-gray-500">
+            ✨ Auto-filled from repository name
+          </p>
+        )}
       </div>
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          Description
+          Description {!selectedRepository && '*'}
         </label>
         <textarea
           value={formData.description}
           onChange={(e) => handleInputChange('description', e.target.value)}
           className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-colors"
           rows={3}
-          placeholder="Brief description of what this feature does..."
+          placeholder={selectedRepository 
+            ? "Add additional context about what makes this repository special..." 
+            : "Brief description of what this feature does..."
+          }
         />
-        {repoAnalysis && (
+        {selectedRepository && (
           <p className="mt-2 text-sm text-gray-500">
-            ✨ Auto-generated from repository analysis
+            ✨ Optional: Add your own description or leave blank to use auto-generated summary
           </p>
         )}
       </div>
@@ -409,6 +440,7 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
           value={formData.language}
           onChange={(e) => handleInputChange('language', e.target.value)}
           className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-colors"
+          disabled={!!selectedRepository && !!repoAnalysis}
         >
           {languages.map(lang => (
             <option key={lang.value} value={lang.value}>
@@ -416,6 +448,11 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
             </option>
           ))}
         </select>
+        {selectedRepository && repoAnalysis && (
+          <p className="mt-2 text-sm text-gray-500">
+            ✨ Auto-detected from repository analysis
+          </p>
+        )}
       </div>
 
       {!selectedRepository && (
@@ -443,19 +480,56 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack, selectedRepositor
             Repository Code Analysis
           </label>
           <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-            <div className="flex items-center space-x-2 mb-3">
-              <FileText className="h-5 w-5 text-gray-600" />
-              <span className="font-medium text-gray-900">Auto-generated from repository scan</span>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-2">
+                <FileText className="h-5 w-5 text-gray-600" />
+                <span className="font-medium text-gray-900">Auto-generated from repository scan</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCodePreview(!showCodePreview)}
+                  className="flex items-center space-x-1 px-3 py-1 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <Eye className="h-4 w-4" />
+                  <span>{showCodePreview ? 'Hide' : 'Preview'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCodePreview(true)}
+                  className="flex items-center space-x-1 px-3 py-1 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                >
+                  <Edit className="h-4 w-4" />
+                  <span>Edit</span>
+                </button>
+              </div>
             </div>
-            <textarea
-              value={formData.codeSnippet}
-              onChange={(e) => handleInputChange('codeSnippet', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-colors font-mono text-xs"
-              rows={8}
-              placeholder="Repository code will be analyzed automatically..."
-            />
+            
+            {showCodePreview && (
+              <textarea
+                value={formData.codeSnippet}
+                onChange={(e) => handleInputChange('codeSnippet', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-colors font-mono text-xs"
+                rows={12}
+                placeholder="Repository code will be analyzed automatically..."
+              />
+            )}
+            
+            {!showCodePreview && (
+              <div className="bg-white rounded-lg p-3 border border-gray-200">
+                <div className="text-sm text-gray-600 space-y-1">
+                  <p><strong>Files included:</strong> {repoAnalysis?.files.length || 0}</p>
+                  <p><strong>Total lines:</strong> {repoAnalysis?.totalLines.toLocaleString() || 0}</p>
+                  <p><strong>Primary language:</strong> {repoAnalysis?.primaryLanguage || 'Analyzing...'}</p>
+                  {repoAnalysis?.keyFeatures.length > 0 && (
+                    <p><strong>Key features:</strong> {repoAnalysis.keyFeatures.slice(0, 3).join(', ')}</p>
+                  )}
+                </div>
+              </div>
+            )}
+            
             <p className="mt-2 text-xs text-gray-500">
-              ✨ This code snippet was automatically generated from your repository's most important files. You can edit it if needed.
+              ✨ This code snippet was automatically generated from your repository's most important files. Click "Edit" to modify if needed.
             </p>
           </div>
         </div>
