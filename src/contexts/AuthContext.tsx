@@ -31,6 +31,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Handle OAuth redirect by cleaning up the URL
+    const handleOAuthRedirect = () => {
+      const hash = window.location.hash
+      if (hash && hash.includes('access_token')) {
+        // Clean up the URL by removing the hash
+        window.history.replaceState(null, '', window.location.pathname)
+      }
+    }
+
+    handleOAuthRedirect()
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
@@ -53,6 +64,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (event === 'SIGNED_IN') {
           // Give the trigger time to create the profile
           await new Promise(resolve => setTimeout(resolve, 1000))
+          
+          // Redirect to dashboard after successful sign in
+          if (window.location.pathname === '/' || window.location.pathname === '/signin') {
+            window.location.href = '/dashboard'
+          }
         }
         await fetchOrCreateProfile(session.user)
       } else {
@@ -79,7 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           id: user.id,
           email: user.email!,
           full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
-          avatar_url: user.user_metadata?.avatar_url || null,
+          avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
           subscription_tier: 'free' as const,
         }
 
@@ -103,7 +119,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           id: user.id,
           email: user.email!,
           full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
-          avatar_url: user.user_metadata?.avatar_url || null,
+          avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
           subscription_tier: 'free',
           github_username: null,
           created_at: new Date().toISOString(),
@@ -119,7 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         id: user.id,
         email: user.email!,
         full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
-        avatar_url: user.user_metadata?.avatar_url || null,
+        avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
         subscription_tier: 'free',
         github_username: null,
         created_at: new Date().toISOString(),
@@ -168,6 +184,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async () => {
     const { error } = await supabase.auth.signOut()
     if (error) throw error
+    // Redirect to home page after sign out
+    window.location.href = '/'
   }
 
   const updateProfile = async (updates: Partial<Profile>) => {

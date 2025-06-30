@@ -38,7 +38,19 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 const AppContent = () => {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+
+  // Show loading while auth is being determined
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white">
@@ -46,22 +58,19 @@ const AppContent = () => {
         <Route path="/signin" element={
           user ? <Navigate to="/dashboard" replace /> : <SignIn />
         } />
-        <Route path="/*" element={
+        <Route path="/dashboard" element={
+          <ProtectedRoute>
+            <Header />
+            <Dashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/" element={
           <>
             <Header />
-            <Routes>
-              <Route path="/" element={<LandingPage />} />
-              <Route 
-                path="/dashboard" 
-                element={
-                  <ProtectedRoute>
-                    <Dashboard />
-                  </ProtectedRoute>
-                } 
-              />
-            </Routes>
+            <LandingPage />
           </>
         } />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>
   );
