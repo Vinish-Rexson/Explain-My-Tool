@@ -88,7 +88,7 @@ const Dashboard = () => {
     setCheckingTavus(prev => new Set(prev).add(projectId))
     
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-tavus-videos`, {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tavus-poll`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
@@ -146,7 +146,7 @@ const Dashboard = () => {
     setCheckingTavus(new Set()) // Clear checking state
     
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-tavus-videos`, {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tavus-poll`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
