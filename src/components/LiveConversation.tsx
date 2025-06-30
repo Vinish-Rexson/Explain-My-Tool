@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { MessageCircle, Mic, MicOff, Video, VideoOff, Phone, PhoneOff, Send, Loader2, User, Bot } from 'lucide-react'
+import { MessageCircle, Mic, MicOff, Video, VideoOff, Phone, PhoneOff, Send, Loader2, User, Bot, Code, FileText, Lightbulb } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
@@ -38,6 +38,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
   const [isMuted, setIsMuted] = useState(false)
   const [isVideoEnabled, setIsVideoEnabled] = useState(true)
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected')
+  const [projectDetails, setProjectDetails] = useState<any>(null)
   
   const videoRef = useRef<HTMLVideoElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -45,6 +46,33 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  useEffect(() => {
+    // Fetch full project details for enhanced context
+    fetchProjectDetails()
+  }, [projectId])
+
+  const fetchProjectDetails = async () => {
+    try {
+      const { data: project, error } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('id', projectId)
+        .single()
+
+      if (!error && project) {
+        setProjectDetails(project)
+        console.log('📋 Project details loaded for chat:', {
+          title: project.title,
+          description: project.description,
+          status: project.status,
+          codeLength: project.code_snippet.length
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching project details:', error)
+    }
+  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -102,10 +130,21 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
       setSession(newSession)
       setConnectionStatus('connected')
 
-      // Add welcome message
-      addMessage('ai', `Hi! I'm here to discuss your ${title} code with you. What would you like to know about this implementation?`)
+      // Add enhanced welcome message with project context
+      const welcomeMessage = `Hi! I'm your AI code assistant, and I have full context about your "${title}" project. 
 
-    } catch (error) {
+I can help you with:
+🔍 **Code Analysis** - Explain how specific parts work
+🛠️ **Improvements** - Suggest optimizations and best practices  
+🐛 **Debugging** - Help identify and fix issues
+🚀 **Extensions** - Ideas for new features or enhancements
+📚 **Documentation** - Explain complex logic or patterns
+
+What would you like to discuss about your ${projectDetails?.description ? 'implementation' : 'code'}?`
+
+      addMessage('ai', welcomeMessage)
+
+    } catch (error: any) {
       console.error('Error initializing conversation:', error)
       setConnectionStatus('disconnected')
       addMessage('ai', 'Sorry, I encountered an error starting our conversation. Please try again.')
@@ -134,7 +173,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
     setIsLoading(true)
 
     try {
-      // Send message to AI conversation endpoint
+      // Send message to AI conversation endpoint with enhanced context
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/conversation-message`, {
         method: 'POST',
         headers: {
@@ -144,8 +183,9 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
         body: JSON.stringify({
           sessionId: session.id,
           message: userMessage,
-          codeSnippet,
-          title
+          codeSnippet: projectDetails?.code_snippet || codeSnippet,
+          title: title,
+          projectId: projectId
         })
       })
 
@@ -210,6 +250,16 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
     }
   }
 
+  // Quick question suggestions
+  const quickQuestions = [
+    "How does this code work?",
+    "What are the main components?",
+    "How can I improve this?",
+    "Are there any potential issues?",
+    "How would I add a new feature?",
+    "Explain the architecture"
+  ]
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col">
@@ -220,8 +270,11 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
               <MessageCircle className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Live Code Conversation</h2>
+              <h2 className="text-xl font-bold text-gray-900">AI Code Assistant</h2>
               <p className="text-sm text-gray-600">{title}</p>
+              {projectDetails?.description && (
+                <p className="text-xs text-gray-500 mt-1">{projectDetails.description}</p>
+              )}
             </div>
           </div>
           
@@ -258,8 +311,8 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
                   <div className="w-24 h-24 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Bot className="h-12 w-12" />
                   </div>
-                  <h3 className="text-lg font-semibold mb-2">AI Code Assistant</h3>
-                  <p className="text-gray-300 mb-6">Ready to discuss your code</p>
+                  <h3 className="text-lg font-semibold mb-2">AI Code Expert</h3>
+                  <p className="text-gray-300 mb-6">Ready to discuss your {title} project</p>
                   
                   {!session && (
                     <button
@@ -274,7 +327,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
                         </>
                       ) : (
                         <>
-                          <Video className="h-5 w-5" />
+                          <MessageCircle className="h-5 w-5" />
                           <span>Start Conversation</span>
                         </>
                       )}
@@ -313,13 +366,30 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
             {/* Messages */}
             <div className="flex-1 p-6 overflow-y-auto bg-gray-50">
               <div className="space-y-4">
+                {messages.length === 0 && session && (
+                  <div className="text-center py-8">
+                    <div className="grid grid-cols-1 gap-2 max-w-sm mx-auto">
+                      <p className="text-sm text-gray-600 mb-4">Quick questions to get started:</p>
+                      {quickQuestions.slice(0, 3).map((question, index) => (
+                        <button
+                          key={index}
+                          onClick={() => setInputMessage(question)}
+                          className="text-left px-3 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm text-gray-700"
+                        >
+                          {question}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {messages.map((message) => (
                   <div
                     key={message.id}
                     className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                      className={`max-w-xs lg:max-w-md px-4 py-3 rounded-lg ${
                         message.type === 'user'
                           ? 'bg-purple-600 text-white'
                           : 'bg-white text-gray-900 border border-gray-200'
@@ -327,14 +397,14 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
                     >
                       <div className="flex items-start space-x-2">
                         {message.type === 'ai' && (
-                          <Bot className="h-4 w-4 mt-0.5 text-purple-600" />
+                          <Bot className="h-4 w-4 mt-0.5 text-purple-600 flex-shrink-0" />
                         )}
                         {message.type === 'user' && (
-                          <User className="h-4 w-4 mt-0.5 text-white" />
+                          <User className="h-4 w-4 mt-0.5 text-white flex-shrink-0" />
                         )}
-                        <div>
-                          <p className="text-sm">{message.content}</p>
-                          <p className={`text-xs mt-1 ${
+                        <div className="flex-1">
+                          <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+                          <p className={`text-xs mt-2 ${
                             message.type === 'user' ? 'text-purple-200' : 'text-gray-500'
                           }`}>
                             {message.timestamp.toLocaleTimeString()}
@@ -347,11 +417,11 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
                 
                 {isLoading && (
                   <div className="flex justify-start">
-                    <div className="bg-white text-gray-900 border border-gray-200 px-4 py-2 rounded-lg">
+                    <div className="bg-white text-gray-900 border border-gray-200 px-4 py-3 rounded-lg">
                       <div className="flex items-center space-x-2">
                         <Bot className="h-4 w-4 text-purple-600" />
                         <Loader2 className="h-4 w-4 animate-spin text-purple-600" />
-                        <span className="text-sm">AI is thinking...</span>
+                        <span className="text-sm">Analyzing your code and generating response...</span>
                       </div>
                     </div>
                   </div>
@@ -361,6 +431,24 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
               </div>
             </div>
 
+            {/* Quick Actions */}
+            {session && messages.length > 0 && (
+              <div className="px-4 py-2 border-t border-gray-200 bg-gray-50">
+                <div className="flex items-center space-x-2 overflow-x-auto">
+                  <span className="text-xs text-gray-500 whitespace-nowrap">Quick:</span>
+                  {quickQuestions.slice(3).map((question, index) => (
+                    <button
+                      key={index}
+                      onClick={() => setInputMessage(question)}
+                      className="text-xs px-2 py-1 bg-white border border-gray-200 rounded hover:bg-gray-50 transition-colors whitespace-nowrap"
+                    >
+                      {question}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Input */}
             <div className="p-4 border-t border-gray-200 bg-white">
               <div className="flex items-end space-x-2">
@@ -369,7 +457,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
                     onKeyPress={handleKeyPress}
-                    placeholder="Ask about the code implementation, best practices, or request explanations..."
+                    placeholder="Ask about the code implementation, architecture, improvements, or any specific questions..."
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
                     rows={2}
                     disabled={!session || isLoading}
@@ -384,8 +472,14 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
                 </button>
               </div>
               
-              <div className="mt-2 text-xs text-gray-500">
-                Press Enter to send, Shift+Enter for new line
+              <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+                <span>Press Enter to send, Shift+Enter for new line</span>
+                {projectDetails && (
+                  <div className="flex items-center space-x-2">
+                    <Code className="h-3 w-3" />
+                    <span>{projectDetails.code_snippet.length} chars of context</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>

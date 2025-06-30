@@ -8,6 +8,7 @@ interface ConversationMessageRequest {
   message: string
   codeSnippet: string
   title: string
+  projectId?: string
 }
 
 // Logging utility
@@ -25,19 +26,53 @@ Deno.serve(async (req) => {
   }
 
   try {
-    log('INIT', '🚀 Processing conversation message')
+    log('INIT', '🚀 Processing conversation message with enhanced context')
     
     const requestData: ConversationMessageRequest = await req.json()
-    const { sessionId, message, codeSnippet, title } = requestData
+    const { sessionId, message, codeSnippet, title, projectId } = requestData
     
     log('REQUEST', 'Received message request', {
       sessionId,
       messageLength: message.length,
-      title
+      title,
+      projectId,
+      codeLength: codeSnippet.length
     })
 
-    // Generate AI response
-    const response = await generateAIResponse(message, codeSnippet, title)
+    // Initialize Supabase client to get full project context
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    )
+
+    // Get full project details for enhanced context
+    let projectContext = null
+    if (projectId) {
+      log('DATABASE', '🔍 Fetching full project context')
+      const { data: project, error: projectError } = await supabaseClient
+        .from('projects')
+        .select('*')
+        .eq('id', projectId)
+        .single()
+
+      if (!projectError && project) {
+        projectContext = project
+        log('CONTEXT', '✅ Retrieved project context', {
+          title: project.title,
+          description: project.description,
+          codeLength: project.code_snippet.length,
+          status: project.status
+        })
+      }
+    }
+
+    // Generate AI response with enhanced context
+    const response = await generateAIResponse(
+      message, 
+      codeSnippet, 
+      title, 
+      projectContext
+    )
     
     log('SUCCESS', '✅ AI response generated successfully', {
       responseLength: response.length
@@ -73,8 +108,13 @@ Deno.serve(async (req) => {
   }
 })
 
-async function generateAIResponse(userMessage: string, codeSnippet: string, title: string): Promise<string> {
-  log('AI', '🤖 Generating AI response')
+async function generateAIResponse(
+  userMessage: string, 
+  codeSnippet: string, 
+  title: string, 
+  projectContext: any = null
+): Promise<string> {
+  log('AI', '🤖 Generating AI response with enhanced context')
   
   const geminiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY')
   const openaiKey = Deno.env.get('OPENAI_API_KEY')
@@ -83,26 +123,32 @@ async function generateAIResponse(userMessage: string, codeSnippet: string, titl
   // Try Google Gemini first (free and excellent)
   if (geminiKey) {
     log('AI', '🟢 Using Google Gemini for conversation')
-    return await generateResponseWithGemini(userMessage, codeSnippet, title, geminiKey)
+    return await generateResponseWithGemini(userMessage, codeSnippet, title, projectContext, geminiKey)
   }
   
   // Fallback to OpenAI
   if (openaiKey) {
     log('AI', '🟡 Using OpenAI for conversation')
-    return await generateResponseWithOpenAI(userMessage, codeSnippet, title, openaiKey)
+    return await generateResponseWithOpenAI(userMessage, codeSnippet, title, projectContext, openaiKey)
   }
   
   // Fallback to Claude
   if (claudeKey) {
     log('AI', '🟣 Using Claude for conversation')
-    return await generateResponseWithClaude(userMessage, codeSnippet, title, claudeKey)
+    return await generateResponseWithClaude(userMessage, codeSnippet, title, projectContext, claudeKey)
   }
   
   throw new Error('No AI API keys configured for conversation')
 }
 
-async function generateResponseWithGemini(userMessage: string, codeSnippet: string, title: string, apiKey: string): Promise<string> {
-  const prompt = createConversationPrompt(userMessage, codeSnippet, title)
+async function generateResponseWithGemini(
+  userMessage: string, 
+  codeSnippet: string, 
+  title: string, 
+  projectContext: any,
+  apiKey: string
+): Promise<string> {
+  const prompt = createEnhancedConversationPrompt(userMessage, codeSnippet, title, projectContext)
   
   const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
     method: 'POST',
@@ -119,7 +165,7 @@ async function generateResponseWithGemini(userMessage: string, codeSnippet: stri
         temperature: 0.8,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: 512,
+        maxOutputTokens: 1024,
       }
     }),
   })
@@ -139,8 +185,14 @@ async function generateResponseWithGemini(userMessage: string, codeSnippet: stri
   return aiResponse
 }
 
-async function generateResponseWithOpenAI(userMessage: string, codeSnippet: string, title: string, apiKey: string): Promise<string> {
-  const prompt = createConversationPrompt(userMessage, codeSnippet, title)
+async function generateResponseWithOpenAI(
+  userMessage: string, 
+  codeSnippet: string, 
+  title: string, 
+  projectContext: any,
+  apiKey: string
+): Promise<string> {
+  const prompt = createEnhancedConversationPrompt(userMessage, codeSnippet, title, projectContext)
   
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -153,14 +205,14 @@ async function generateResponseWithOpenAI(userMessage: string, codeSnippet: stri
       messages: [
         {
           role: 'system',
-          content: 'You are an expert software engineer having a friendly conversation about code. Keep responses conversational, helpful, and concise.'
+          content: 'You are an expert software engineer having a detailed conversation about code. You have deep knowledge of the project context and can answer specific questions about implementation, architecture, best practices, and improvements. Keep responses helpful, detailed when needed, but conversational.'
         },
         {
           role: 'user',
           content: prompt
         }
       ],
-      max_tokens: 512,
+      max_tokens: 1024,
       temperature: 0.8,
     }),
   })
@@ -180,8 +232,14 @@ async function generateResponseWithOpenAI(userMessage: string, codeSnippet: stri
   return aiResponse
 }
 
-async function generateResponseWithClaude(userMessage: string, codeSnippet: string, title: string, apiKey: string): Promise<string> {
-  const prompt = createConversationPrompt(userMessage, codeSnippet, title)
+async function generateResponseWithClaude(
+  userMessage: string, 
+  codeSnippet: string, 
+  title: string, 
+  projectContext: any,
+  apiKey: string
+): Promise<string> {
+  const prompt = createEnhancedConversationPrompt(userMessage, codeSnippet, title, projectContext)
   
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -192,7 +250,7 @@ async function generateResponseWithClaude(userMessage: string, codeSnippet: stri
     },
     body: JSON.stringify({
       model: 'claude-3-sonnet-20240229',
-      max_tokens: 512,
+      max_tokens: 1024,
       messages: [{
         role: 'user',
         content: prompt
@@ -215,22 +273,47 @@ async function generateResponseWithClaude(userMessage: string, codeSnippet: stri
   return aiResponse
 }
 
-function createConversationPrompt(userMessage: string, codeSnippet: string, title: string): string {
-  return `You are having a live conversation about this code project: "${title}"
+function createEnhancedConversationPrompt(
+  userMessage: string, 
+  codeSnippet: string, 
+  title: string, 
+  projectContext: any
+): string {
+  let prompt = `You are an expert software engineer having a detailed conversation about this project: "${title}"
 
-CODE CONTEXT:
+PROJECT CONTEXT:
+- Title: ${title}
+${projectContext?.description ? `- Description: ${projectContext.description}` : ''}
+${projectContext?.status ? `- Status: ${projectContext.status}` : ''}
+${projectContext?.created_at ? `- Created: ${new Date(projectContext.created_at).toLocaleDateString()}` : ''}
+
+FULL CODE CONTEXT:
 \`\`\`
 ${codeSnippet}
 \`\`\`
 
-USER MESSAGE: "${userMessage}"
+USER QUESTION: "${userMessage}"
 
-Please respond as an expert software engineer in a conversational, friendly way. Keep your response:
-- Focused on the user's question about the code
-- Conversational and natural (like talking to a colleague)
-- Concise but informative (2-3 sentences max)
-- Practical and actionable
-- Encouraging and supportive
+INSTRUCTIONS:
+You are an expert who has deep knowledge of this specific codebase. Please provide a helpful, detailed response that:
 
-If the user asks about something not directly related to the code, gently redirect them back to discussing the implementation, best practices, or improvements for this specific code.`
+1. **Directly addresses the user's question** about this specific code
+2. **References specific parts of the code** when relevant (mention function names, variables, patterns)
+3. **Provides context-aware insights** based on the actual implementation
+4. **Suggests improvements or alternatives** if appropriate
+5. **Explains the "why" behind design decisions** visible in the code
+6. **Offers practical next steps** or related considerations
+
+Keep your response:
+- **Conversational and engaging** (like talking to a colleague)
+- **Technically accurate** and specific to this codebase
+- **Helpful and actionable** with concrete suggestions
+- **Appropriately detailed** based on the complexity of the question
+
+If the user asks about something not directly in the code, relate it back to what IS in the code and how it could be extended or modified.`
+
+  return prompt
 }
+
+// Import createClient function
+import { createClient } from 'npm:@supabase/supabase-js@2'
