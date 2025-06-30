@@ -72,7 +72,26 @@ VITE_SUPABASE_URL=your_supabase_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-### 4. Start Creating Videos!
+### 4. Configure Supabase Edge Function Environment Variables
+
+**IMPORTANT**: The GitHub OAuth integration requires environment variables to be set in your Supabase project, not just your local `.env` file.
+
+#### Option 1: Using Supabase Dashboard (Recommended)
+1. Go to your [Supabase Dashboard](https://supabase.com/dashboard)
+2. Select your project
+3. Navigate to **Settings** → **Edge Functions**
+4. Add these environment variables:
+   - `GITHUB_CLIENT_ID`: Your GitHub OAuth app's Client ID
+   - `GITHUB_CLIENT_SECRET`: Your GitHub OAuth app's Client Secret
+
+#### Option 2: Using Supabase CLI
+```bash
+# Set GitHub OAuth credentials for Edge Functions
+supabase secrets set GITHUB_CLIENT_ID=your_github_client_id_here
+supabase secrets set GITHUB_CLIENT_SECRET=your_github_client_secret_here
+```
+
+### 5. Start Creating Videos!
 ```bash
 npm run dev
 ```
@@ -89,12 +108,29 @@ npm run dev
    - **Authorization callback URL**: `http://localhost:5173/github-callback`
 
 ### Step 2: Configure Environment Variables
-Add these to your `.env` file:
+
+#### Frontend Environment Variables (Local `.env` file)
+Add these to your local `.env` file:
 ```env
-# GitHub OAuth Configuration
+# GitHub OAuth Configuration (Frontend)
 VITE_GITHUB_CLIENT_ID=your_github_client_id_here
-GITHUB_CLIENT_ID=your_github_client_id_here
-GITHUB_CLIENT_SECRET=your_github_client_secret_here
+```
+
+#### Backend Environment Variables (Supabase Edge Functions)
+Configure these in your Supabase project:
+
+**Using Supabase Dashboard:**
+1. Go to [Supabase Dashboard](https://supabase.com/dashboard)
+2. Select your project
+3. Navigate to **Settings** → **Edge Functions**
+4. Add environment variables:
+   - `GITHUB_CLIENT_ID`: Your GitHub OAuth app's Client ID
+   - `GITHUB_CLIENT_SECRET`: Your GitHub OAuth app's Client Secret
+
+**Using Supabase CLI:**
+```bash
+supabase secrets set GITHUB_CLIENT_ID=your_github_client_id_here
+supabase secrets set GITHUB_CLIENT_SECRET=your_github_client_secret_here
 ```
 
 ### Step 3: Restart Development Server
@@ -183,6 +219,7 @@ The app is built with:
 
 ## 📝 Environment Variables Reference
 
+### Local Development (`.env` file)
 ```env
 # Required for script generation (choose one)
 GOOGLE_GEMINI_API_KEY=AIza...     # FREE option ⭐
@@ -192,18 +229,29 @@ OPENAI_API_KEY=sk-...             # Paid option
 # Required for voice generation
 ELEVENLABS_API_KEY=sk_...
 
-# Optional for GitHub integration
+# Optional for GitHub integration (frontend)
 VITE_GITHUB_CLIENT_ID=...
-GITHUB_CLIENT_ID=...
-GITHUB_CLIENT_SECRET=...
 
 # Optional for face videos
 TAVUS_API_KEY=...
 TAVUS_REPLICA_ID=...              # UUID from Tavus dashboard
 
-# Automatically configured
+# Automatically configured by Supabase
 VITE_SUPABASE_URL=...
 VITE_SUPABASE_ANON_KEY=...
+```
+
+### Supabase Edge Functions (Set via Dashboard or CLI)
+```env
+# Required for GitHub OAuth backend
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
+
+# Automatically available in Edge Functions
+SUPABASE_URL=...
+SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_DB_URL=...
 ```
 
 ## 🚨 Troubleshooting
@@ -215,25 +263,36 @@ VITE_SUPABASE_ANON_KEY=...
    - Restart the development server after adding keys
 
 2. **"GitHub integration not configured"**
-   - Add `VITE_GITHUB_CLIENT_ID` to your `.env` file
-   - Create a GitHub OAuth app and get the Client ID
+   - Add `VITE_GITHUB_CLIENT_ID` to your local `.env` file
+   - Set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in Supabase Edge Functions
+   - Create a GitHub OAuth app and get the Client ID and Secret
    - Restart the development server
 
-3. **Google Gemini API Error**
+3. **"Invalid state parameter" Error**
+   - This usually happens due to React StrictMode or page refreshes
+   - Try the GitHub connection process again
+   - Clear your browser's localStorage and try again
+
+4. **"GitHub OAuth not configured" in Edge Function**
+   - Ensure `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are set in your Supabase project
+   - Use the Supabase Dashboard (Settings → Edge Functions) or CLI to set these
+   - These are different from the `VITE_GITHUB_CLIENT_ID` used by the frontend
+
+5. **Google Gemini API Error**
    - Verify your API key is correct (starts with `AIza`)
    - Check you haven't exceeded the rate limits (15 requests/minute)
 
-4. **"Invalid replica_uuid" Error (Tavus)**
+6. **"Invalid replica_uuid" Error (Tavus)**
    - Make sure you have `TAVUS_REPLICA_ID` set to a valid UUID from your Tavus dashboard
    - Create an avatar in Tavus first, then copy the replica ID
    - The replica ID should be in UUID format (e.g., `123e4567-e89b-12d3-a456-426614174000`)
 
-5. **Video Generation Fails**
+7. **Video Generation Fails**
    - Check the browser console and server logs for detailed errors
    - Verify API keys are valid and have sufficient credits
    - For face videos, ensure you have both `TAVUS_API_KEY` and `TAVUS_REPLICA_ID` configured
 
-6. **GitHub OAuth Errors**
+8. **GitHub OAuth Errors**
    - Verify your callback URL matches exactly: `http://localhost:5173/github-callback`
    - Check that both `VITE_GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are set
    - Make sure your GitHub OAuth app is not suspended

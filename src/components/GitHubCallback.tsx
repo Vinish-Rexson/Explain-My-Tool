@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Github, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -9,13 +9,22 @@ const GitHubCallback = () => {
   const { updateProfile } = useAuth()
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
   const [message, setMessage] = useState('')
+  const hasProcessed = useRef(false)
 
   useEffect(() => {
+    // Prevent multiple executions in React StrictMode
+    if (hasProcessed.current) {
+      return
+    }
+    
     handleGitHubCallback()
   }, [])
 
   const handleGitHubCallback = async () => {
     try {
+      // Mark as processed to prevent duplicate runs
+      hasProcessed.current = true
+      
       const urlParams = new URLSearchParams(window.location.search)
       const code = urlParams.get('code')
       const state = urlParams.get('state')
@@ -32,11 +41,15 @@ const GitHubCallback = () => {
 
       // Verify state parameter
       const storedState = localStorage.getItem('github_oauth_state')
+      if (!storedState) {
+        throw new Error('No stored state found. Please try connecting GitHub again.')
+      }
+      
       if (state !== storedState) {
-        throw new Error('Invalid state parameter')
+        throw new Error('Invalid state parameter. Please try connecting GitHub again.')
       }
 
-      // Clean up stored state
+      // Clean up stored state only after successful verification
       localStorage.removeItem('github_oauth_state')
 
       // Get current session
@@ -79,6 +92,9 @@ const GitHubCallback = () => {
       console.error('GitHub callback error:', error)
       setStatus('error')
       setMessage(error.message || 'Failed to connect GitHub account')
+      
+      // Clean up stored state on error
+      localStorage.removeItem('github_oauth_state')
       
       // Redirect to dashboard after a delay even on error
       setTimeout(() => {
