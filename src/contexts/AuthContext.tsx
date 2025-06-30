@@ -31,6 +31,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    console.log('AuthProvider: Initializing auth state')
+    
     // Handle OAuth redirect by cleaning up the URL
     const handleOAuthRedirect = () => {
       const hash = window.location.hash
@@ -44,12 +46,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('AuthProvider: Initial session check', { 
+        hasSession: !!session, 
+        userEmail: session?.user?.email,
+        loading: true 
+      })
+      
       setSession(session)
       setUser(session?.user ?? null)
+      
       if (session?.user) {
+        console.log('AuthProvider: User found, fetching profile...')
         fetchOrCreateProfile(session.user)
       } else {
-        // Important: Set loading to false when there's no user
+        console.log('AuthProvider: No user session, setting loading to false')
         setLoading(false)
       }
     })
@@ -58,13 +68,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event, session?.user?.email)
+      console.log('AuthProvider: Auth state changed', { 
+        event, 
+        userEmail: session?.user?.email,
+        hasSession: !!session,
+        loading: loading 
+      })
       
       setSession(session)
       setUser(session?.user ?? null)
       
       if (session?.user) {
         if (event === 'SIGNED_IN') {
+          console.log('AuthProvider: User signed in, will redirect to dashboard')
           // Give the trigger time to create the profile
           await new Promise(resolve => setTimeout(resolve, 1000))
           
@@ -73,9 +89,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             window.location.href = '/dashboard'
           }
         }
+        console.log('AuthProvider: Fetching profile for authenticated user')
         await fetchOrCreateProfile(session.user)
       } else {
-        // Important: Clear profile and set loading to false when user signs out
+        console.log('AuthProvider: No user, clearing profile and setting loading to false')
         setProfile(null)
         setLoading(false)
       }
@@ -85,8 +102,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [])
 
   const fetchOrCreateProfile = async (user: User) => {
+    console.log('AuthProvider: fetchOrCreateProfile started for user:', user.email)
+    
     try {
-      setLoading(true) // Set loading when starting profile fetch
+      setLoading(true)
+      console.log('AuthProvider: Set loading to true, fetching profile...')
       
       // First try to fetch existing profile
       let { data: profile, error } = await supabase
@@ -96,6 +116,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .single()
 
       if (error && error.code === 'PGRST116') {
+        console.log('AuthProvider: Profile not found, creating new profile...')
         // Profile doesn't exist, create it
         const newProfile = {
           id: user.id,
@@ -112,14 +133,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .single()
 
         if (createError) {
-          console.error('Error creating profile:', createError)
+          console.error('AuthProvider: Error creating profile:', createError)
           // Still set a basic profile to avoid blocking the user
           setProfile(newProfile)
         } else {
+          console.log('AuthProvider: Profile created successfully')
           setProfile(createdProfile)
         }
       } else if (error) {
-        console.error('Error fetching profile:', error)
+        console.error('AuthProvider: Error fetching profile:', error)
         // Create a basic profile object to avoid blocking the user
         setProfile({
           id: user.id,
@@ -132,10 +154,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           updated_at: new Date().toISOString(),
         })
       } else {
+        console.log('AuthProvider: Profile fetched successfully')
         setProfile(profile)
       }
     } catch (error) {
-      console.error('Error in fetchOrCreateProfile:', error)
+      console.error('AuthProvider: Error in fetchOrCreateProfile:', error)
       // Create a fallback profile to avoid blocking the user
       setProfile({
         id: user.id,
@@ -148,7 +171,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updated_at: new Date().toISOString(),
       })
     } finally {
-      // Always set loading to false after profile operations complete
+      console.log('AuthProvider: Setting loading to false after profile operations')
       setLoading(false)
     }
   }
@@ -208,6 +231,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (error) throw error
     setProfile(data)
   }
+
+  // Log current state for debugging
+  console.log('AuthProvider: Current state', { 
+    hasUser: !!user, 
+    hasProfile: !!profile, 
+    loading,
+    userEmail: user?.email 
+  })
 
   const value = {
     user,
