@@ -71,6 +71,15 @@ const Dashboard = () => {
 
       if (error) throw error
       setProjects(data || [])
+      
+      // Log project details for debugging
+      console.log('📋 Current projects:', (data || []).map(p => ({
+        id: p.id,
+        title: p.title,
+        status: p.status,
+        tavus_video_id: p.tavus_video_id,
+        created_at: p.created_at
+      })))
     } catch (error) {
       console.error('Error fetching projects:', error)
     } finally {
@@ -98,13 +107,37 @@ const Dashboard = () => {
       const result = await response.json()
       console.log('🔧 Fix result:', result)
       
+      // Show detailed results
+      if (result.projects && result.projects.length > 0) {
+        console.log('📋 Processing projects found:')
+        result.projects.forEach((project: any, index: number) => {
+          console.log(`${index + 1}. ID: ${project.id}, Title: "${project.title}", Status: ${project.status}`)
+        })
+      }
+      
+      if (result.results && result.results.length > 0) {
+        console.log('🎬 Tavus video results:')
+        result.results.forEach((res: any) => {
+          console.log(`- Video ${res.videoId} (${res.expectedTitle}): ${res.status}`)
+          if (res.title) {
+            console.log(`  Matched to: "${res.title}"`)
+          }
+          if (res.error) {
+            console.log(`  Error: ${res.error}`)
+          }
+        })
+      }
+      
       // Refresh projects to show updated status
       await fetchProjects()
       
       if (result.updated > 0) {
-        alert(`✅ Successfully fixed ${result.updated} projects with Tavus videos!`)
+        alert(`✅ Successfully fixed ${result.updated} projects with Tavus videos!\n\nCheck the console for detailed results.`)
       } else {
-        alert('📝 No projects were updated. Videos may still be processing.')
+        const message = result.projects?.length > 0 
+          ? `📝 Found ${result.projects.length} processing projects but no videos were ready.\n\nProject IDs:\n${result.projects.map((p: any) => `- ${p.id}: "${p.title}"`).join('\n')}\n\nTavus videos checked:\n- 78e70f85d4 (User Authentication)\n- b1ad928a3a (Chat App)\n\nCheck console for detailed results.`
+          : '📝 No processing projects found to fix.'
+        alert(message)
       }
     } catch (error) {
       console.error('💥 Error fixing Tavus projects:', error)
@@ -125,22 +158,19 @@ const Dashboard = () => {
     setCheckingTavus(prev => new Set(prev).add(projectId))
     
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tavus-poll`, {
-        method: 'POST',
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tavus-poll?projectId=${projectId}`, {
+        method: 'GET',
         headers: {
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          projectId: projectId
-        })
+        }
       })
 
       if (response.ok) {
         const result = await response.json()
         console.log(`📊 Tavus check result for project ${projectId}:`, result)
         
-        if (result.updated > 0) {
+        if (result.status === 'completed' && result.videoUrl) {
           console.log(`✅ Video found and updated from Tavus for project ${projectId}!`)
           // Refresh projects to show the updated status
           await fetchProjects()
@@ -471,6 +501,9 @@ const Dashboard = () => {
                   <p className="text-orange-600 text-sm">
                     These projects are missing Tavus video IDs. Click "Fix Tavus" to match them with completed videos.
                   </p>
+                  <p className="text-orange-500 text-xs mt-1">
+                    Known videos: 78e70f85d4 (User Authentication), b1ad928a3a (Chat App)
+                  </p>
                 </div>
                 <button 
                   onClick={fixTavusProjects}
@@ -629,6 +662,9 @@ const Dashboard = () => {
                             Tavus: {project.tavus_video_id}
                           </span>
                         )}
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                          ID: {project.id.slice(0, 8)}...
+                        </span>
                       </div>
                       
                       {project.description && (

@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    log('INIT', '🚀 Starting Tavus projects fix')
+    log('INIT', '🚀 Starting direct Tavus projects fix')
 
     // Initialize Supabase client
     const supabaseClient = createClient(
@@ -33,12 +33,13 @@ Deno.serve(async (req) => {
       throw new Error('Tavus API key not configured')
     }
 
-    // Get all processing projects
-    log('DATABASE', '🔍 Finding processing projects')
+    // Get all processing projects with their IDs
+    log('DATABASE', '🔍 Finding all processing projects')
     const { data: projects, error: projectsError } = await supabaseClient
       .from('projects')
       .select('*')
       .eq('status', 'processing')
+      .order('created_at', { ascending: false })
 
     if (projectsError) {
       log('ERROR', '❌ Failed to fetch projects', projectsError)
@@ -51,7 +52,8 @@ Deno.serve(async (req) => {
         JSON.stringify({
           success: true,
           message: 'No processing projects found',
-          updated: 0
+          updated: 0,
+          projects: []
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -60,67 +62,101 @@ Deno.serve(async (req) => {
       )
     }
 
-    log('PROJECTS', `📋 Found ${projects.length} processing projects`)
+    log('PROJECTS', `📋 Found ${projects.length} processing projects:`)
+    projects.forEach((project, index) => {
+      log('PROJECT', `${index + 1}. ID: ${project.id}, Title: "${project.title}", Created: ${project.created_at}`)
+    })
 
-    // Known Tavus video IDs from your screenshots
-    const knownTavusVideos = [
-      '78e70f85d4', // User Authentication System
-      'b1ad928a3a'  // Chat-App---React
+    // Known Tavus video mappings based on your information
+    const tavusVideoMappings = [
+      {
+        videoId: '78e70f85d4',
+        expectedTitle: 'User Authentication System',
+        keywords: ['authentication', 'user', 'auth', 'jwt', 'login']
+      },
+      {
+        videoId: 'b1ad928a3a', 
+        expectedTitle: 'Chat-App---React',
+        keywords: ['chat', 'react', 'app', 'markdown']
+      }
     ]
 
     let updatedCount = 0
     const results = []
 
-    // Check each known Tavus video
-    for (const videoId of knownTavusVideos) {
+    // First, check each Tavus video to see if it's completed
+    for (const mapping of tavusVideoMappings) {
       try {
-        log('TAVUS', `🎬 Checking Tavus video: ${videoId}`)
+        log('TAVUS', `🎬 Checking Tavus video: ${mapping.videoId} (expected: ${mapping.expectedTitle})`)
         
-        const response = await fetch(`https://tavusapi.com/v2/videos/${videoId}`, {
+        const response = await fetch(`https://tavusapi.com/v2/videos/${mapping.videoId}`, {
           headers: {
             'x-api-key': tavusApiKey,
           },
         })
 
         if (!response.ok) {
-          log('WARNING', `⚠️ Failed to fetch video ${videoId}`, { 
+          log('WARNING', `⚠️ Failed to fetch video ${mapping.videoId}`, { 
             status: response.status 
+          })
+          results.push({
+            videoId: mapping.videoId,
+            expectedTitle: mapping.expectedTitle,
+            status: 'api_error',
+            error: `HTTP ${response.status}`
           })
           continue
         }
 
         const videoData = await response.json()
-        log('TAVUS', `📊 Video ${videoId} status`, {
+        log('TAVUS', `📊 Video ${mapping.videoId} status`, {
           status: videoData.status,
-          hasDownloadUrl: !!videoData.download_url
+          hasDownloadUrl: !!videoData.download_url,
+          expectedTitle: mapping.expectedTitle
         })
 
         if (videoData.status === 'completed' && videoData.download_url) {
-          // Try to match this video to a project
+          // Try multiple matching strategies
           let matchedProject = null
           
-          if (videoId === '78e70f85d4') {
-            // User Authentication System
-            matchedProject = projects.find(p => 
-              p.title.toLowerCase().includes('authentication') || 
-              p.title.toLowerCase().includes('user')
-            )
-          } else if (videoId === 'b1ad928a3a') {
-            // Chat-App---React
-            matchedProject = projects.find(p => 
-              p.title.toLowerCase().includes('chat') || 
-              p.title.toLowerCase().includes('react')
-            )
+          // Strategy 1: Exact title match (case insensitive)
+          matchedProject = projects.find(p => 
+            p.title.toLowerCase() === mapping.expectedTitle.toLowerCase()
+          )
+          
+          // Strategy 2: Keyword matching
+          if (!matchedProject) {
+            matchedProject = projects.find(p => {
+              const titleLower = p.title.toLowerCase()
+              return mapping.keywords.some(keyword => titleLower.includes(keyword))
+            })
+          }
+          
+          // Strategy 3: Partial title matching
+          if (!matchedProject) {
+            matchedProject = projects.find(p => {
+              const titleLower = p.title.toLowerCase()
+              const expectedLower = mapping.expectedTitle.toLowerCase()
+              return titleLower.includes(expectedLower.split(' ')[0]) || 
+                     expectedLower.includes(titleLower.split(' ')[0])
+            })
+          }
+          
+          // Strategy 4: If we have exactly 2 projects and 2 videos, match by order
+          if (!matchedProject && projects.length === 2 && tavusVideoMappings.length === 2) {
+            const projectIndex = tavusVideoMappings.indexOf(mapping)
+            matchedProject = projects[projectIndex]
+            log('FALLBACK', `🎯 Using fallback matching by order: project ${projectIndex + 1}`)
           }
 
           if (matchedProject) {
-            log('MATCH', `🎯 Matched video ${videoId} to project: ${matchedProject.title}`)
+            log('MATCH', `🎯 Matched video ${mapping.videoId} to project: "${matchedProject.title}" (ID: ${matchedProject.id})`)
             
             // Update project with Tavus video ID and completed status
             const { error: updateError } = await supabaseClient
               .from('projects')
               .update({
-                tavus_video_id: videoId,
+                tavus_video_id: mapping.videoId,
                 video_url: videoData.download_url,
                 status: 'completed',
                 updated_at: new Date().toISOString()
@@ -130,19 +166,21 @@ Deno.serve(async (req) => {
             if (updateError) {
               log('ERROR', `❌ Failed to update project ${matchedProject.id}`, updateError)
               results.push({
-                videoId,
+                videoId: mapping.videoId,
                 projectId: matchedProject.id,
                 title: matchedProject.title,
+                expectedTitle: mapping.expectedTitle,
                 status: 'update_error',
                 error: updateError.message
               })
             } else {
-              log('SUCCESS', `✅ Successfully updated project: ${matchedProject.title}`)
+              log('SUCCESS', `✅ Successfully updated project: "${matchedProject.title}" with video ${mapping.videoId}`)
               updatedCount++
               results.push({
-                videoId,
+                videoId: mapping.videoId,
                 projectId: matchedProject.id,
                 title: matchedProject.title,
+                expectedTitle: mapping.expectedTitle,
                 status: 'completed',
                 videoUrl: videoData.download_url
               })
@@ -165,39 +203,49 @@ Deno.serve(async (req) => {
               }
             }
           } else {
-            log('WARNING', `⚠️ Could not match video ${videoId} to any project`)
+            log('WARNING', `⚠️ Could not match video ${mapping.videoId} (${mapping.expectedTitle}) to any project`)
+            log('AVAILABLE', 'Available projects:', projects.map(p => ({ id: p.id, title: p.title })))
             results.push({
-              videoId,
+              videoId: mapping.videoId,
+              expectedTitle: mapping.expectedTitle,
               status: 'no_match',
-              message: 'Could not match to any project'
+              message: 'Could not match to any project',
+              availableProjects: projects.map(p => ({ id: p.id, title: p.title }))
             })
           }
         } else {
-          log('INFO', `📝 Video ${videoId} not ready`, { status: videoData.status })
+          log('INFO', `📝 Video ${mapping.videoId} not ready`, { 
+            status: videoData.status,
+            expectedTitle: mapping.expectedTitle 
+          })
           results.push({
-            videoId,
+            videoId: mapping.videoId,
+            expectedTitle: mapping.expectedTitle,
             status: videoData.status || 'not_ready',
             message: 'Video not completed yet'
           })
         }
 
       } catch (error) {
-        log('ERROR', `💥 Error processing video ${videoId}`, error)
+        log('ERROR', `💥 Error processing video ${mapping.videoId}`, error)
         results.push({
-          videoId,
+          videoId: mapping.videoId,
+          expectedTitle: mapping.expectedTitle,
           status: 'error',
           error: error.message
         })
       }
     }
 
-    log('SUCCESS', `🎉 Fix completed! Updated ${updatedCount} projects`)
+    log('SUCCESS', `🎉 Fix completed! Updated ${updatedCount} out of ${projects.length} projects`)
 
     return new Response(
       JSON.stringify({
         success: true,
         message: `Fix completed! Updated ${updatedCount} projects with Tavus videos`,
         updated: updatedCount,
+        totalProjects: projects.length,
+        projects: projects.map(p => ({ id: p.id, title: p.title, status: p.status })),
         results: results
       }),
       {
