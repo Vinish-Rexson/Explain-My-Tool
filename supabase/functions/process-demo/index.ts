@@ -1,6 +1,7 @@
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
 interface ProcessDemoRequest {
@@ -27,8 +28,12 @@ function log(step: string, message: string, data?: any) {
 }
 
 Deno.serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { 
+      headers: corsHeaders,
+      status: 200 
+    })
   }
 
   let projectId = 'unknown'
@@ -72,6 +77,73 @@ Deno.serve(async (req) => {
       log('ERROR', '❌ Failed to update project status', statusError)
       throw new Error(`Database error: ${statusError.message}`)
     }
+
+    // Return immediate response to prevent CORS timeout
+    // The actual processing will continue in the background
+    log('RESPONSE', '✅ Returning immediate success response to prevent CORS timeout')
+    
+    // Start background processing (don't await)
+    processVideoInBackground(supabaseClient, projectId, formData)
+
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        message: 'Demo video generation started successfully! Processing will continue in the background.',
+        projectId: projectId,
+        estimatedTime: '2-5 minutes'
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      },
+    )
+
+  } catch (error) {
+    log('ERROR', '💥 Fatal error during demo generation', {
+      error: error.message,
+      stack: error.stack,
+      projectId
+    })
+    
+    // Update project status to failed
+    try {
+      log('CLEANUP', '🧹 Updating project status to failed')
+      const supabaseClient = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      )
+      
+      await supabaseClient
+        .from('projects')
+        .update({
+          status: 'failed',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', projectId)
+      
+      log('CLEANUP', '✅ Project status updated to failed')
+    } catch (updateError) {
+      log('ERROR', '❌ Failed to update project status to failed', updateError)
+    }
+
+    return new Response(
+      JSON.stringify({ 
+        error: error.message,
+        details: 'Check the function logs for detailed error information',
+        projectId 
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500,
+      },
+    )
+  }
+})
+
+// Background processing function that doesn't block the response
+async function processVideoInBackground(supabaseClient: any, projectId: string, formData: any) {
+  try {
+    log('BACKGROUND', '🔄 Starting background video processing', { projectId })
 
     // Step 1: Generate script using AI
     log('SCRIPT', '🤖 Starting AI script generation')
@@ -142,26 +214,13 @@ Deno.serve(async (req) => {
       log('ANALYTICS', '✅ Analytics entry created successfully')
     }
 
-    log('SUCCESS', '🎉 Demo generation completed successfully!', {
+    log('SUCCESS', '🎉 Background demo generation completed successfully!', {
       projectId,
-      finalVideoUrl,
-      processingTimeSeconds: 'N/A' // Could add timing if needed
+      finalVideoUrl
     })
 
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        videoUrl: finalVideoUrl,
-        message: 'Demo video generated successfully!'
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      },
-    )
-
   } catch (error) {
-    log('ERROR', '💥 Fatal error during demo generation', {
+    log('ERROR', '💥 Fatal error during background processing', {
       error: error.message,
       stack: error.stack,
       projectId
@@ -169,12 +228,6 @@ Deno.serve(async (req) => {
     
     // Update project status to failed
     try {
-      log('CLEANUP', '🧹 Updating project status to failed')
-      const supabaseClient = createClient(
-        Deno.env.get('SUPABASE_URL') ?? '',
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-      )
-      
       await supabaseClient
         .from('projects')
         .update({
@@ -182,25 +235,11 @@ Deno.serve(async (req) => {
           updated_at: new Date().toISOString()
         })
         .eq('id', projectId)
-      
-      log('CLEANUP', '✅ Project status updated to failed')
     } catch (updateError) {
       log('ERROR', '❌ Failed to update project status to failed', updateError)
     }
-
-    return new Response(
-      JSON.stringify({ 
-        error: error.message,
-        details: 'Check the function logs for detailed error information',
-        projectId 
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
-      },
-    )
   }
-})
+}
 
 async function generateScript(formData: any, projectId: string): Promise<string> {
   log('SCRIPT_AI', '🔍 Checking available AI providers')
