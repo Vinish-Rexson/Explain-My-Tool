@@ -26,6 +26,7 @@ serve(async (req) => {
   }
 
   try {
+    // Initialize Supabase client with environment variables
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -33,19 +34,41 @@ serve(async (req) => {
 
     const { projectId, formData }: ProcessDemoRequest = await req.json()
 
+    // Validate required API keys
+    const requiredKeys = ['OPENAI_API_KEY', 'ELEVENLABS_API_KEY']
+    const missingKeys = requiredKeys.filter(key => !Deno.env.get(key))
+    
+    if (missingKeys.length > 0) {
+      throw new Error(`Missing required API keys: ${missingKeys.join(', ')}`)
+    }
+
+    // Optional API key validation
+    if (formData.includeFace && !Deno.env.get('TAVUS_API_KEY')) {
+      console.warn('TAVUS_API_KEY not found, face video generation will be skipped')
+    }
+
     // Step 1: Generate script using OpenAI
+    console.log('Generating script with OpenAI...')
     const script = await generateScript(formData)
     
     // Step 2: Generate voice using ElevenLabs
+    console.log('Generating voice with ElevenLabs...')
     const audioUrl = await generateVoice(script, formData.voiceStyle)
     
-    // Step 3: Generate face video using Tavus (if enabled)
+    // Step 3: Generate face video using Tavus (if enabled and API key available)
     let faceVideoUrl = null
-    if (formData.includeFace) {
-      faceVideoUrl = await generateFaceVideo(script, audioUrl)
+    if (formData.includeFace && Deno.env.get('TAVUS_API_KEY')) {
+      console.log('Generating face video with Tavus...')
+      try {
+        faceVideoUrl = await generateFaceVideo(script, audioUrl)
+      } catch (error) {
+        console.error('Tavus face video generation failed:', error)
+        // Continue without face video
+      }
     }
     
     // Step 4: Combine everything into final video
+    console.log('Creating final video...')
     const finalVideoUrl = await combineVideo({
       script,
       audioUrl,
@@ -81,7 +104,12 @@ serve(async (req) => {
       }])
 
     return new Response(
-      JSON.stringify({ success: true, videoUrl: finalVideoUrl }),
+      JSON.stringify({ 
+        success: true, 
+        videoUrl: finalVideoUrl,
+        hasFaceVideo: !!faceVideoUrl,
+        script: script.substring(0, 100) + '...' // Preview of generated script
+      }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
@@ -111,7 +139,10 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        error: error.message,
+        details: 'Check server logs for more information'
+      }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 500,
@@ -123,7 +154,7 @@ serve(async (req) => {
 async function generateScript(formData: any): Promise<string> {
   const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
   if (!openaiApiKey) {
-    throw new Error('OpenAI API key not configured')
+    throw new Error('OPENAI_API_KEY environment variable is required')
   }
 
   const prompt = createScriptPrompt(formData)
@@ -152,7 +183,8 @@ async function generateScript(formData: any): Promise<string> {
   })
 
   if (!response.ok) {
-    throw new Error(`OpenAI API error: ${response.statusText}`)
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`)
   }
 
   const data = await response.json()
@@ -162,7 +194,7 @@ async function generateScript(formData: any): Promise<string> {
 async function generateVoice(script: string, voiceStyle: string): Promise<string> {
   const elevenlabsApiKey = Deno.env.get('ELEVENLABS_API_KEY')
   if (!elevenlabsApiKey) {
-    throw new Error('ElevenLabs API key not configured')
+    throw new Error('ELEVENLABS_API_KEY environment variable is required')
   }
 
   // Map voice styles to ElevenLabs voice IDs
@@ -192,12 +224,13 @@ async function generateVoice(script: string, voiceStyle: string): Promise<string
   })
 
   if (!response.ok) {
-    throw new Error(`ElevenLabs API error: ${response.statusText}`)
+    const errorText = await response.text().catch(() => 'Unknown error')
+    throw new Error(`ElevenLabs API error: ${response.status} ${response.statusText} - ${errorText}`)
   }
 
   // Upload audio to Supabase Storage
   const audioBuffer = await response.arrayBuffer()
-  const audioFileName = `audio_${Date.now()}.mp3`
+  const audioFileName = `audio_${Date.now()}_${Math.random().toString(36).substring(7)}.mp3`
   
   const supabaseClient = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
@@ -211,7 +244,7 @@ async function generateVoice(script: string, voiceStyle: string): Promise<string
     })
 
   if (uploadError) {
-    throw new Error(`Failed to upload audio: ${uploadError.message}`)
+    throw new Error(`Failed to upload audio to Supabase Storage: ${uploadError.message}`)
   }
 
   const { data: { publicUrl } } = supabaseClient.storage
@@ -224,7 +257,7 @@ async function generateVoice(script: string, voiceStyle: string): Promise<string
 async function generateFaceVideo(script: string, audioUrl: string): Promise<string> {
   const tavusApiKey = Deno.env.get('TAVUS_API_KEY')
   if (!tavusApiKey) {
-    throw new Error('Tavus API key not configured')
+    throw new Error('TAVUS_API_KEY environment variable is required for face video generation')
   }
 
   const response = await fetch('https://tavusapi.com/v2/videos', {
@@ -244,7 +277,8 @@ async function generateFaceVideo(script: string, audioUrl: string): Promise<stri
   })
 
   if (!response.ok) {
-    throw new Error(`Tavus API error: ${response.statusText}`)
+    const errorText = await response.text().catch(() => 'Unknown error')
+    throw new Error(`Tavus API error: ${response.status} ${response.statusText} - ${errorText}`)
   }
 
   const data = await response.json()
@@ -275,7 +309,7 @@ async function generateFaceVideo(script: string, audioUrl: string): Promise<stri
     attempts++
   }
 
-  throw new Error('Tavus video generation timed out')
+  throw new Error('Tavus video generation timed out after 5 minutes')
 }
 
 async function combineVideo(params: {
@@ -300,6 +334,7 @@ async function combineVideo(params: {
   
   // If no face video, create a simple video with code and audio
   // This would typically involve video generation libraries
+  // For now, we'll return the audio URL as a placeholder
   return params.audioUrl
 }
 
