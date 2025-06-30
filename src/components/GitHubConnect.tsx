@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Github, RefreshCw, ExternalLink, Star, GitFork, Lock, Globe, Code, Calendar } from 'lucide-react'
+import { Github, RefreshCw, ExternalLink, Star, GitFork, Lock, Globe, Code, Calendar, AlertCircle } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
@@ -35,6 +35,9 @@ const GitHubConnect: React.FC<GitHubConnectProps> = ({
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState('')
 
+  // Check if GitHub is configured
+  const isGitHubConfigured = !!import.meta.env.VITE_GITHUB_CLIENT_ID
+
   useEffect(() => {
     if (profile?.github_username && showRepositories) {
       fetchRepositories()
@@ -44,7 +47,7 @@ const GitHubConnect: React.FC<GitHubConnectProps> = ({
   const connectGitHub = () => {
     const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID
     if (!clientId) {
-      setError('GitHub integration not configured')
+      setError('GitHub integration not configured. Please add VITE_GITHUB_CLIENT_ID to your environment variables.')
       return
     }
 
@@ -68,10 +71,15 @@ const GitHubConnect: React.FC<GitHubConnectProps> = ({
     setError('')
 
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('No active session')
+      }
+
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/github-repos?sync=${sync}`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${await supabase.auth.getSession().then(s => s.data.session?.access_token)}`,
+          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
       })
@@ -130,6 +138,37 @@ const GitHubConnect: React.FC<GitHubConnectProps> = ({
       Kotlin: '#F18E33',
     }
     return colors[language || ''] || '#6b7280'
+  }
+
+  // Show configuration needed message if GitHub is not configured
+  if (!isGitHubConfigured) {
+    return (
+      <div className="bg-white rounded-xl p-6 border border-gray-200">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="h-8 w-8 text-yellow-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            GitHub Integration Not Configured
+          </h3>
+          <div className="text-left bg-gray-50 rounded-lg p-4 mb-6">
+            <p className="text-sm text-gray-700 mb-3">
+              To enable GitHub integration, you need to:
+            </p>
+            <ol className="text-sm text-gray-600 space-y-2 list-decimal list-inside">
+              <li>Create a GitHub OAuth App at <a href="https://github.com/settings/developers" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">GitHub Developer Settings</a></li>
+              <li>Set the callback URL to: <code className="bg-gray-200 px-1 rounded text-xs">{window.location.origin}/github-callback</code></li>
+              <li>Add your Client ID to the <code className="bg-gray-200 px-1 rounded text-xs">.env</code> file as <code className="bg-gray-200 px-1 rounded text-xs">VITE_GITHUB_CLIENT_ID</code></li>
+              <li>Add your Client Secret as <code className="bg-gray-200 px-1 rounded text-xs">GITHUB_CLIENT_SECRET</code></li>
+              <li>Restart the development server</li>
+            </ol>
+          </div>
+          <p className="text-sm text-gray-500">
+            See the README.md file for detailed setup instructions.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   if (!profile?.github_username) {
