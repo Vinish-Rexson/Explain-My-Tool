@@ -521,9 +521,7 @@ async function generateFaceVideo(script: string, audioUrl: string, projectId: st
       script: script,
       replica_id: 'default', // Use default avatar
       background_url: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1920&h=1080&fit=crop',
-      voice_settings: {
-        audio_url: audioUrl
-      }
+      audio_url: audioUrl // Moved audio_url to top level
     }),
   })
 
