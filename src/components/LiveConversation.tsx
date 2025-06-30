@@ -267,43 +267,43 @@ What would you like to explore about your ${title} code?`
   ]
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-[95vh] max-h-[900px] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <div className="flex items-center space-x-4">
-            <div className="bg-gradient-to-r from-purple-600 to-blue-600 p-2 rounded-lg">
-              <MessageCircle className="h-6 w-6 text-white" />
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center space-x-3 sm:space-x-4 min-w-0">
+            <div className="bg-gradient-to-r from-purple-600 to-blue-600 p-2 rounded-lg flex-shrink-0">
+              <MessageCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
             </div>
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">AI Code Expert</h2>
-              <p className="text-sm text-gray-600">{title}</p>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">AI Code Expert</h2>
+              <p className="text-sm text-gray-600 truncate">{title}</p>
               {projectDetails?.description && (
-                <p className="text-xs text-gray-500 mt-1">{projectDetails.description}</p>
+                <p className="text-xs text-gray-500 mt-1 truncate hidden sm:block">{projectDetails.description}</p>
               )}
             </div>
           </div>
           
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
             <div className={`flex items-center space-x-2 ${getConnectionStatusColor()}`}>
               <div className="w-2 h-2 rounded-full bg-current"></div>
-              <span className="text-sm font-medium">{getConnectionStatusText()}</span>
+              <span className="text-sm font-medium hidden sm:inline">{getConnectionStatusText()}</span>
             </div>
             
             <button
               onClick={endConversation}
-              className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              className="flex items-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
             >
               <PhoneOff className="h-4 w-4" />
-              <span>End</span>
+              <span className="hidden sm:inline">End</span>
             </button>
           </div>
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 flex">
+        <div className="flex-1 flex flex-col lg:flex-row min-h-0">
           {/* Video/Avatar Section */}
-          <div className="w-1/2 bg-gray-900 relative">
+          <div className="w-full lg:w-1/2 bg-gray-900 relative flex-shrink-0 h-64 lg:h-auto">
             {session?.conversationUrl ? (
               <iframe
                 src={session.conversationUrl}
@@ -312,17 +312,17 @@ What would you like to explore about your ${title} code?`
                 title="AI Conversation"
               />
             ) : (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center text-white">
-                  <div className="w-24 h-24 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Bot className="h-12 w-12" />
+              <div className="flex items-center justify-center h-full p-4">
+                <div className="text-center text-white max-w-sm">
+                  <div className="w-16 h-16 sm:w-24 sm:h-24 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Bot className="h-8 w-8 sm:h-12 sm:w-12" />
                   </div>
                   <h3 className="text-lg font-semibold mb-2">AI Code Expert</h3>
-                  <p className="text-gray-300 mb-2">Ready to analyze your {title} code</p>
+                  <p className="text-gray-300 mb-2 text-sm">Ready to analyze your {title} code</p>
                   <div className="text-sm text-gray-400 mb-6">
                     <div className="flex items-center justify-center space-x-2">
                       <Code className="h-4 w-4" />
-                      <span>{(projectDetails?.code_snippet?.length || codeSnippet.length).toLocaleString()} characters loaded</span>
+                      <span className="text-xs">{(projectDetails?.code_snippet?.length || codeSnippet.length).toLocaleString()} characters loaded</span>
                     </div>
                   </div>
                   
@@ -330,17 +330,17 @@ What would you like to explore about your ${title} code?`
                     <button
                       onClick={initializeConversation}
                       disabled={isLoading}
-                      className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-3 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 mx-auto"
+                      className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 mx-auto text-sm sm:text-base"
                     >
                       {isLoading ? (
                         <>
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                          <span>Loading Code Context...</span>
+                          <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />
+                          <span>Loading...</span>
                         </>
                       ) : (
                         <>
-                          <Zap className="h-5 w-5" />
-                          <span>Start Code Analysis</span>
+                          <Zap className="h-4 w-4 sm:h-5 sm:w-5" />
+                          <span>Start Analysis</span>
                         </>
                       )}
                     </button>
@@ -354,32 +354,32 @@ What would you like to explore about your ${title} code?`
               <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center space-x-2">
                 <button
                   onClick={() => setIsMuted(!isMuted)}
-                  className={`p-3 rounded-full transition-colors ${
+                  className={`p-2 sm:p-3 rounded-full transition-colors ${
                     isMuted ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'
                   } text-white`}
                 >
-                  {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+                  {isMuted ? <MicOff className="h-4 w-4 sm:h-5 sm:w-5" /> : <Mic className="h-4 w-4 sm:h-5 sm:w-5" />}
                 </button>
                 
                 <button
                   onClick={() => setIsVideoEnabled(!isVideoEnabled)}
-                  className={`p-3 rounded-full transition-colors ${
+                  className={`p-2 sm:p-3 rounded-full transition-colors ${
                     !isVideoEnabled ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'
                   } text-white`}
                 >
-                  {isVideoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+                  {isVideoEnabled ? <Video className="h-4 w-4 sm:h-5 sm:w-5" /> : <VideoOff className="h-4 w-4 sm:h-5 sm:w-5" />}
                 </button>
               </div>
             )}
           </div>
 
           {/* Chat Section */}
-          <div className="w-1/2 flex flex-col">
+          <div className="w-full lg:w-1/2 flex flex-col min-h-0 flex-1">
             {/* Messages */}
-            <div className="flex-1 p-6 overflow-y-auto bg-gray-50">
+            <div className="flex-1 p-3 sm:p-6 overflow-y-auto bg-gray-50 min-h-0">
               <div className="space-y-4">
                 {messages.length === 0 && session && (
-                  <div className="text-center py-8">
+                  <div className="text-center py-4 sm:py-8">
                     <div className="grid grid-cols-1 gap-2 max-w-sm mx-auto">
                       <div className="flex items-center justify-center space-x-2 mb-4">
                         <Code className="h-5 w-5 text-purple-600" />
@@ -404,7 +404,7 @@ What would you like to explore about your ${title} code?`
                     className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-xs lg:max-w-md px-4 py-3 rounded-lg ${
+                      className={`max-w-xs sm:max-w-md lg:max-w-lg px-3 sm:px-4 py-2 sm:py-3 rounded-lg ${
                         message.type === 'user'
                           ? 'bg-purple-600 text-white'
                           : 'bg-white text-gray-900 border border-gray-200'
@@ -417,8 +417,8 @@ What would you like to explore about your ${title} code?`
                         {message.type === 'user' && (
                           <User className="h-4 w-4 mt-0.5 text-white flex-shrink-0" />
                         )}
-                        <div className="flex-1">
-                          <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm whitespace-pre-wrap break-words">{message.content}</div>
                           <p className={`text-xs mt-2 ${
                             message.type === 'user' ? 'text-purple-200' : 'text-gray-500'
                           }`}>
@@ -432,11 +432,11 @@ What would you like to explore about your ${title} code?`
                 
                 {isLoading && (
                   <div className="flex justify-start">
-                    <div className="bg-white text-gray-900 border border-gray-200 px-4 py-3 rounded-lg">
+                    <div className="bg-white text-gray-900 border border-gray-200 px-3 sm:px-4 py-2 sm:py-3 rounded-lg">
                       <div className="flex items-center space-x-2">
                         <Bot className="h-4 w-4 text-purple-600" />
                         <Loader2 className="h-4 w-4 animate-spin text-purple-600" />
-                        <span className="text-sm">Analyzing your code and generating response...</span>
+                        <span className="text-sm">Analyzing your code...</span>
                       </div>
                     </div>
                   </div>
@@ -448,10 +448,10 @@ What would you like to explore about your ${title} code?`
 
             {/* Quick Actions */}
             {session && messages.length > 0 && (
-              <div className="px-4 py-2 border-t border-gray-200 bg-gray-50">
+              <div className="px-3 sm:px-4 py-2 border-t border-gray-200 bg-gray-50 flex-shrink-0">
                 <div className="flex items-center space-x-2 overflow-x-auto">
                   <span className="text-xs text-gray-500 whitespace-nowrap">Quick:</span>
-                  {quickQuestions.slice(4).map((question, index) => (
+                  {quickQuestions.slice(4, 6).map((question, index) => (
                     <button
                       key={index}
                       onClick={() => setInputMessage(question)}
@@ -465,15 +465,15 @@ What would you like to explore about your ${title} code?`
             )}
 
             {/* Input */}
-            <div className="p-4 border-t border-gray-200 bg-white">
+            <div className="p-3 sm:p-4 border-t border-gray-200 bg-white flex-shrink-0">
               <div className="flex items-end space-x-2">
                 <div className="flex-1">
                   <textarea
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
                     onKeyPress={handleKeyPress}
-                    placeholder="Ask about specific functions, implementation details, improvements, or any code-related questions..."
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                    placeholder="Ask about specific functions, implementation details, improvements..."
+                    className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none text-sm"
                     rows={2}
                     disabled={!session || isLoading}
                   />
@@ -481,9 +481,9 @@ What would you like to explore about your ${title} code?`
                 <button
                   onClick={sendMessage}
                   disabled={!inputMessage.trim() || !session || isLoading}
-                  className="bg-purple-600 text-white p-3 rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-purple-600 text-white p-2 sm:p-3 rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
                 >
-                  <Send className="h-5 w-5" />
+                  <Send className="h-4 w-4 sm:h-5 sm:w-5" />
                 </button>
               </div>
               
@@ -492,7 +492,7 @@ What would you like to explore about your ${title} code?`
                 {projectDetails && (
                   <div className="flex items-center space-x-2">
                     <Code className="h-3 w-3" />
-                    <span>{projectDetails.code_snippet.length.toLocaleString()} chars of code context</span>
+                    <span className="hidden sm:inline">{projectDetails.code_snippet.length.toLocaleString()} chars</span>
                   </div>
                 )}
               </div>
