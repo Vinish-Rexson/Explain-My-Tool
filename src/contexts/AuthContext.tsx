@@ -33,6 +33,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     console.log('AuthProvider: Initializing auth state')
     
+    // Set a maximum loading timeout to prevent infinite loading
+    const loadingTimeout = setTimeout(() => {
+      console.log('AuthProvider: Loading timeout reached, forcing loading to false')
+      setLoading(false)
+    }, 10000) // 10 seconds max loading time
+
     // Handle OAuth redirect by cleaning up the URL
     const handleOAuthRedirect = () => {
       const hash = window.location.hash
@@ -57,11 +63,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       if (session?.user) {
         console.log('AuthProvider: User found, fetching profile...')
-        fetchOrCreateProfile(session.user)
+        fetchOrCreateProfile(session.user).finally(() => {
+          clearTimeout(loadingTimeout)
+        })
       } else {
         console.log('AuthProvider: No user session, setting loading to false')
         setLoading(false)
+        clearTimeout(loadingTimeout)
       }
+    }).catch((error) => {
+      console.error('AuthProvider: Error getting initial session:', error)
+      setLoading(false)
+      clearTimeout(loadingTimeout)
     })
 
     // Listen for auth changes
@@ -98,7 +111,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      subscription.unsubscribe()
+      clearTimeout(loadingTimeout)
+    }
   }, [])
 
   const fetchOrCreateProfile = async (user: User) => {
@@ -108,55 +124,66 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(true)
       console.log('AuthProvider: Set loading to true, fetching profile...')
       
-      // First try to fetch existing profile
-      let { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single()
-
-      if (error && error.code === 'PGRST116') {
-        console.log('AuthProvider: Profile not found, creating new profile...')
-        // Profile doesn't exist, create it
-        const newProfile = {
-          id: user.id,
-          email: user.email!,
-          full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
-          avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
-          subscription_tier: 'free' as const,
-        }
-
-        const { data: createdProfile, error: createError } = await supabase
+      // Add a timeout for the profile fetch operation
+      const profilePromise = (async () => {
+        // First try to fetch existing profile
+        let { data: profile, error } = await supabase
           .from('profiles')
-          .insert([newProfile])
-          .select()
+          .select('*')
+          .eq('id', user.id)
           .single()
 
-        if (createError) {
-          console.error('AuthProvider: Error creating profile:', createError)
-          // Still set a basic profile to avoid blocking the user
-          setProfile(newProfile)
+        if (error && error.code === 'PGRST116') {
+          console.log('AuthProvider: Profile not found, creating new profile...')
+          // Profile doesn't exist, create it
+          const newProfile = {
+            id: user.id,
+            email: user.email!,
+            full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
+            avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
+            subscription_tier: 'free' as const,
+          }
+
+          const { data: createdProfile, error: createError } = await supabase
+            .from('profiles')
+            .insert([newProfile])
+            .select()
+            .single()
+
+          if (createError) {
+            console.error('AuthProvider: Error creating profile:', createError)
+            // Still set a basic profile to avoid blocking the user
+            setProfile(newProfile)
+          } else {
+            console.log('AuthProvider: Profile created successfully')
+            setProfile(createdProfile)
+          }
+        } else if (error) {
+          console.error('AuthProvider: Error fetching profile:', error)
+          // Create a basic profile object to avoid blocking the user
+          setProfile({
+            id: user.id,
+            email: user.email!,
+            full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
+            avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
+            subscription_tier: 'free',
+            github_username: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
         } else {
-          console.log('AuthProvider: Profile created successfully')
-          setProfile(createdProfile)
+          console.log('AuthProvider: Profile fetched successfully')
+          setProfile(profile)
         }
-      } else if (error) {
-        console.error('AuthProvider: Error fetching profile:', error)
-        // Create a basic profile object to avoid blocking the user
-        setProfile({
-          id: user.id,
-          email: user.email!,
-          full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
-          avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
-          subscription_tier: 'free',
-          github_username: null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-      } else {
-        console.log('AuthProvider: Profile fetched successfully')
-        setProfile(profile)
-      }
+      })()
+
+      // Race the profile fetch against a timeout
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Profile fetch timeout')), 8000) // 8 second timeout
+      })
+
+      await Promise.race([profilePromise, timeoutPromise])
+
     } catch (error) {
       console.error('AuthProvider: Error in fetchOrCreateProfile:', error)
       // Create a fallback profile to avoid blocking the user
