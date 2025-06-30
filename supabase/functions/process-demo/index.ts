@@ -502,15 +502,22 @@ async function generateVoice(script: string, voiceStyle: string, projectId: stri
 }
 
 async function generateFaceVideo(script: string, audioUrl: string, projectId: string): Promise<string> {
-  log('FACE', '🔍 Checking Tavus API key')
+  log('FACE', '🔍 Checking Tavus API configuration')
   
   const tavusApiKey = Deno.env.get('TAVUS_API_KEY')
+  const tavusReplicaId = Deno.env.get('TAVUS_REPLICA_ID')
+  
   if (!tavusApiKey) {
     log('WARNING', '⚠️ Tavus API key not configured, skipping face video generation')
     return audioUrl // Return audio URL as fallback
   }
 
-  log('FACE', '🎬 Starting Tavus video generation')
+  if (!tavusReplicaId) {
+    log('ERROR', '❌ Tavus replica ID not configured')
+    throw new Error('TAVUS_REPLICA_ID is required for face video generation. Please add your replica UUID from Tavus dashboard to your environment variables.')
+  }
+
+  log('FACE', '🎬 Starting Tavus video generation', { replicaId: tavusReplicaId })
   const response = await fetch('https://tavusapi.com/v2/videos', {
     method: 'POST',
     headers: {
@@ -518,9 +525,9 @@ async function generateFaceVideo(script: string, audioUrl: string, projectId: st
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      replica_id: 'default', // Use default avatar
+      replica_id: tavusReplicaId, // Use environment variable instead of hardcoded 'default'
       background_url: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1920&h=1080&fit=crop',
-      audio_url: audioUrl // Only send audio_url, not script
+      audio_url: audioUrl
     }),
   })
 

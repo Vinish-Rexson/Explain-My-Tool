@@ -45,7 +45,17 @@ You don't need to pay for OpenAI! We support multiple AI providers:
 GOOGLE_GEMINI_API_KEY=AIza_your_key_here
 ```
 
-### 3. Start Creating Videos!
+### 3. (Optional) Set Up Face Video Generation
+If you want AI avatars in your videos:
+1. Go to [Tavus](https://tavusapi.com/) and create an account
+2. Create an avatar and get your replica ID (UUID format)
+3. Add to your .env file:
+```bash
+TAVUS_API_KEY=your_tavus_api_key
+TAVUS_REPLICA_ID=your_replica_uuid_here
+```
+
+### 4. Start Creating Videos!
 ```bash
 npm run dev
 ```
@@ -67,6 +77,7 @@ That's it! You can now generate unlimited demo videos for FREE using Google Gemi
 
 ### Tavus Integration (Optional)
 - **Feature**: Face-talking avatar generation
+- **Setup**: Requires creating an avatar and getting replica UUID
 - **Optional**: Can be disabled to use audio-only demos
 - **Cost**: Paid service for face videos
 
@@ -120,6 +131,7 @@ ELEVENLABS_API_KEY=sk_...
 
 # Optional for face videos
 TAVUS_API_KEY=...
+TAVUS_REPLICA_ID=...              # UUID from Tavus dashboard
 
 # Automatically configured
 VITE_SUPABASE_URL=...
@@ -138,9 +150,15 @@ VITE_SUPABASE_ANON_KEY=...
    - Verify your API key is correct (starts with `AIza`)
    - Check you haven't exceeded the rate limits (15 requests/minute)
 
-3. **Video Generation Fails**
+3. **"Invalid replica_uuid" Error (Tavus)**
+   - Make sure you have `TAVUS_REPLICA_ID` set to a valid UUID from your Tavus dashboard
+   - Create an avatar in Tavus first, then copy the replica ID
+   - The replica ID should be in UUID format (e.g., `123e4567-e89b-12d3-a456-426614174000`)
+
+4. **Video Generation Fails**
    - Check the browser console and server logs for detailed errors
    - Verify API keys are valid and have sufficient credits
+   - For face videos, ensure you have both `TAVUS_API_KEY` and `TAVUS_REPLICA_ID` configured
 
 ### Getting Help
 
