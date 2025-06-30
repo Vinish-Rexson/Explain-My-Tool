@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { MessageCircle, Mic, MicOff, Video, VideoOff, Phone, PhoneOff, Send, Loader2, User, Bot, Code, FileText, Lightbulb } from 'lucide-react'
+import { MessageCircle, Mic, MicOff, Video, VideoOff, Phone, PhoneOff, Send, Loader2, User, Bot, Code, FileText, Lightbulb, Zap } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
@@ -131,16 +131,20 @@ const LiveConversation: React.FC<LiveConversationProps> = ({
       setConnectionStatus('connected')
 
       // Add enhanced welcome message with project context
-      const welcomeMessage = `Hi! I'm your AI code assistant, and I have full context about your "${title}" project. 
+      const codeLength = projectDetails?.code_snippet?.length || codeSnippet.length
+      const welcomeMessage = `Hi! I'm your AI code assistant with full access to your "${title}" project code (${codeLength.toLocaleString()} characters).
 
 I can help you with:
-🔍 **Code Analysis** - Explain how specific parts work
-🛠️ **Improvements** - Suggest optimizations and best practices  
-🐛 **Debugging** - Help identify and fix issues
-🚀 **Extensions** - Ideas for new features or enhancements
-📚 **Documentation** - Explain complex logic or patterns
+🔍 **Code Analysis** - Explain specific functions, classes, and logic
+🛠️ **Implementation Details** - How your code works and why
+🐛 **Debugging Help** - Identify issues and suggest fixes  
+🚀 **Improvements** - Optimize performance and code quality
+📚 **Architecture** - Explain patterns and design decisions
+💡 **Extensions** - Add new features to your existing code
 
-What would you like to discuss about your ${projectDetails?.description ? 'implementation' : 'code'}?`
+I have the complete code context, so feel free to ask detailed questions about any part of your implementation!
+
+What would you like to explore about your ${title} code?`
 
       addMessage('ai', welcomeMessage)
 
@@ -173,7 +177,7 @@ What would you like to discuss about your ${projectDetails?.description ? 'imple
     setIsLoading(true)
 
     try {
-      // Send message to AI conversation endpoint with enhanced context
+      // Send message to AI conversation endpoint with project ID for database lookup
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/conversation-message`, {
         method: 'POST',
         headers: {
@@ -183,9 +187,9 @@ What would you like to discuss about your ${projectDetails?.description ? 'imple
         body: JSON.stringify({
           sessionId: session.id,
           message: userMessage,
-          codeSnippet: projectDetails?.code_snippet || codeSnippet,
+          codeSnippet: codeSnippet, // Fallback code
           title: title,
-          projectId: projectId
+          projectId: projectId // This will trigger database lookup for actual code
         })
       })
 
@@ -250,14 +254,16 @@ What would you like to discuss about your ${projectDetails?.description ? 'imple
     }
   }
 
-  // Quick question suggestions
+  // Enhanced quick question suggestions based on code analysis
   const quickQuestions = [
-    "How does this code work?",
-    "What are the main components?",
-    "How can I improve this?",
-    "Are there any potential issues?",
-    "How would I add a new feature?",
-    "Explain the architecture"
+    "Explain how this code works",
+    "What are the main functions?", 
+    "How can I improve this code?",
+    "Are there any security issues?",
+    "What design patterns are used?",
+    "How would I add error handling?",
+    "Explain the data flow",
+    "What are potential optimizations?"
   ]
 
   return (
@@ -270,7 +276,7 @@ What would you like to discuss about your ${projectDetails?.description ? 'imple
               <MessageCircle className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-gray-900">AI Code Assistant</h2>
+              <h2 className="text-xl font-bold text-gray-900">AI Code Expert</h2>
               <p className="text-sm text-gray-600">{title}</p>
               {projectDetails?.description && (
                 <p className="text-xs text-gray-500 mt-1">{projectDetails.description}</p>
@@ -312,7 +318,13 @@ What would you like to discuss about your ${projectDetails?.description ? 'imple
                     <Bot className="h-12 w-12" />
                   </div>
                   <h3 className="text-lg font-semibold mb-2">AI Code Expert</h3>
-                  <p className="text-gray-300 mb-6">Ready to discuss your {title} project</p>
+                  <p className="text-gray-300 mb-2">Ready to analyze your {title} code</p>
+                  <div className="text-sm text-gray-400 mb-6">
+                    <div className="flex items-center justify-center space-x-2">
+                      <Code className="h-4 w-4" />
+                      <span>{(projectDetails?.code_snippet?.length || codeSnippet.length).toLocaleString()} characters loaded</span>
+                    </div>
+                  </div>
                   
                   {!session && (
                     <button
@@ -323,12 +335,12 @@ What would you like to discuss about your ${projectDetails?.description ? 'imple
                       {isLoading ? (
                         <>
                           <Loader2 className="h-5 w-5 animate-spin" />
-                          <span>Connecting...</span>
+                          <span>Loading Code Context...</span>
                         </>
                       ) : (
                         <>
-                          <MessageCircle className="h-5 w-5" />
-                          <span>Start Conversation</span>
+                          <Zap className="h-5 w-5" />
+                          <span>Start Code Analysis</span>
                         </>
                       )}
                     </button>
@@ -369,12 +381,15 @@ What would you like to discuss about your ${projectDetails?.description ? 'imple
                 {messages.length === 0 && session && (
                   <div className="text-center py-8">
                     <div className="grid grid-cols-1 gap-2 max-w-sm mx-auto">
-                      <p className="text-sm text-gray-600 mb-4">Quick questions to get started:</p>
-                      {quickQuestions.slice(0, 3).map((question, index) => (
+                      <div className="flex items-center justify-center space-x-2 mb-4">
+                        <Code className="h-5 w-5 text-purple-600" />
+                        <p className="text-sm text-gray-600 font-medium">Ask me anything about your code:</p>
+                      </div>
+                      {quickQuestions.slice(0, 4).map((question, index) => (
                         <button
                           key={index}
                           onClick={() => setInputMessage(question)}
-                          className="text-left px-3 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm text-gray-700"
+                          className="text-left px-3 py-2 bg-white border border-gray-200 rounded-lg hover:bg-purple-50 hover:border-purple-300 transition-colors text-sm text-gray-700"
                         >
                           {question}
                         </button>
@@ -436,11 +451,11 @@ What would you like to discuss about your ${projectDetails?.description ? 'imple
               <div className="px-4 py-2 border-t border-gray-200 bg-gray-50">
                 <div className="flex items-center space-x-2 overflow-x-auto">
                   <span className="text-xs text-gray-500 whitespace-nowrap">Quick:</span>
-                  {quickQuestions.slice(3).map((question, index) => (
+                  {quickQuestions.slice(4).map((question, index) => (
                     <button
                       key={index}
                       onClick={() => setInputMessage(question)}
-                      className="text-xs px-2 py-1 bg-white border border-gray-200 rounded hover:bg-gray-50 transition-colors whitespace-nowrap"
+                      className="text-xs px-2 py-1 bg-white border border-gray-200 rounded hover:bg-purple-50 hover:border-purple-300 transition-colors whitespace-nowrap"
                     >
                       {question}
                     </button>
@@ -457,7 +472,7 @@ What would you like to discuss about your ${projectDetails?.description ? 'imple
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
                     onKeyPress={handleKeyPress}
-                    placeholder="Ask about the code implementation, architecture, improvements, or any specific questions..."
+                    placeholder="Ask about specific functions, implementation details, improvements, or any code-related questions..."
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
                     rows={2}
                     disabled={!session || isLoading}
@@ -477,7 +492,7 @@ What would you like to discuss about your ${projectDetails?.description ? 'imple
                 {projectDetails && (
                   <div className="flex items-center space-x-2">
                     <Code className="h-3 w-3" />
-                    <span>{projectDetails.code_snippet.length} chars of context</span>
+                    <span>{projectDetails.code_snippet.length.toLocaleString()} chars of code context</span>
                   </div>
                 )}
               </div>
