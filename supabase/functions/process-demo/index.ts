@@ -34,12 +34,17 @@ serve(async (req) => {
 
     const { projectId, formData }: ProcessDemoRequest = await req.json()
 
-    // Validate required API keys
-    const requiredKeys = ['OPENAI_API_KEY', 'ELEVENLABS_API_KEY']
-    const missingKeys = requiredKeys.filter(key => !Deno.env.get(key))
+    // Validate required API keys - now supports multiple AI providers
+    const hasOpenAI = !!Deno.env.get('OPENAI_API_KEY')
+    const hasGemini = !!Deno.env.get('GOOGLE_GEMINI_API_KEY')
+    const hasElevenLabs = !!Deno.env.get('ELEVENLABS_API_KEY')
     
-    if (missingKeys.length > 0) {
-      throw new Error(`Missing required API keys: ${missingKeys.join(', ')}`)
+    if (!hasElevenLabs) {
+      throw new Error('ELEVENLABS_API_KEY is required for voice generation')
+    }
+    
+    if (!hasOpenAI && !hasGemini) {
+      throw new Error('Either OPENAI_API_KEY or GOOGLE_GEMINI_API_KEY is required for script generation')
     }
 
     // Optional API key validation
@@ -47,8 +52,8 @@ serve(async (req) => {
       console.warn('TAVUS_API_KEY not found, face video generation will be skipped')
     }
 
-    // Step 1: Generate script using OpenAI
-    console.log('Generating script with OpenAI...')
+    // Step 1: Generate script using available AI provider
+    console.log('Generating script with AI...')
     const script = await generateScript(formData)
     
     // Step 2: Generate voice using ElevenLabs
@@ -108,7 +113,8 @@ serve(async (req) => {
         success: true, 
         videoUrl: finalVideoUrl,
         hasFaceVideo: !!faceVideoUrl,
-        script: script.substring(0, 100) + '...' // Preview of generated script
+        script: script.substring(0, 100) + '...',
+        aiProvider: hasOpenAI ? 'OpenAI' : 'Google Gemini'
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -152,17 +158,26 @@ serve(async (req) => {
 })
 
 async function generateScript(formData: any): Promise<string> {
+  // Try OpenAI first, fallback to Google Gemini
   const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
-  if (!openaiApiKey) {
-    throw new Error('OPENAI_API_KEY environment variable is required')
+  const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY')
+  
+  if (openaiApiKey) {
+    return await generateScriptWithOpenAI(formData, openaiApiKey)
+  } else if (geminiApiKey) {
+    return await generateScriptWithGemini(formData, geminiApiKey)
+  } else {
+    throw new Error('No AI provider API key found. Please set either OPENAI_API_KEY or GOOGLE_GEMINI_API_KEY')
   }
+}
 
+async function generateScriptWithOpenAI(formData: any, apiKey: string): Promise<string> {
   const prompt = createScriptPrompt(formData)
   
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${openaiApiKey}`,
+      'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -189,6 +204,43 @@ async function generateScript(formData: any): Promise<string> {
 
   const data = await response.json()
   return data.choices[0].message.content
+}
+
+async function generateScriptWithGemini(formData: any, apiKey: string): Promise<string> {
+  const prompt = createScriptPrompt(formData)
+  
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      contents: [{
+        parts: [{
+          text: `You are an expert technical presenter who creates engaging demo scripts for developers. Create clear, concise, and compelling scripts that explain code in an accessible way.\n\n${prompt}`
+        }]
+      }],
+      generationConfig: {
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 2000,
+      }
+    }),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(`Google Gemini API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`)
+  }
+
+  const data = await response.json()
+  
+  if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+    throw new Error('Invalid response from Google Gemini API')
+  }
+  
+  return data.candidates[0].content.parts[0].text
 }
 
 async function generateVoice(script: string, voiceStyle: string): Promise<string> {
