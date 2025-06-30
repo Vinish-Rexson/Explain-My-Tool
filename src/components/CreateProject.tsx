@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ArrowLeft, Upload, Code, Wand2, Play, Loader2 } from 'lucide-react'
+import { ArrowLeft, Upload, Code, Wand2, Play, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -8,11 +8,21 @@ interface CreateProjectProps {
   onBack: () => void
 }
 
+interface ProcessingStep {
+  id: string
+  name: string
+  status: 'pending' | 'processing' | 'completed' | 'error'
+  message?: string
+  timestamp?: string
+}
+
 const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([])
+  const [showProcessingDetails, setShowProcessingDetails] = useState(false)
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -75,6 +85,38 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
     }
   ]
 
+  const initializeProcessingSteps = () => {
+    const steps: ProcessingStep[] = [
+      { id: 'init', name: 'Initializing', status: 'pending' },
+      { id: 'script', name: 'Generating AI Script', status: 'pending' },
+      { id: 'voice', name: 'Creating Voice Narration', status: 'pending' },
+    ]
+
+    if (formData.includeFace) {
+      steps.push({ id: 'face', name: 'Generating Face Video', status: 'pending' })
+    }
+
+    steps.push(
+      { id: 'combine', name: 'Combining Video Elements', status: 'pending' },
+      { id: 'finalize', name: 'Finalizing Video', status: 'pending' }
+    )
+
+    setProcessingSteps(steps)
+  }
+
+  const updateProcessingStep = (stepId: string, status: ProcessingStep['status'], message?: string) => {
+    setProcessingSteps(prev => prev.map(step => 
+      step.id === stepId 
+        ? { 
+            ...step, 
+            status, 
+            message, 
+            timestamp: new Date().toLocaleTimeString() 
+          }
+        : step
+    ))
+  }
+
   const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }))
   }
@@ -83,7 +125,12 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
     if (!user) return
 
     setLoading(true)
+    setShowProcessingDetails(true)
+    initializeProcessingSteps()
+
     try {
+      updateProcessingStep('init', 'processing', 'Creating project in database...')
+
       // Create project in database
       const { data: project, error } = await supabase
         .from('projects')
@@ -99,6 +146,8 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
 
       if (error) throw error
 
+      updateProcessingStep('init', 'completed', 'Project created successfully')
+
       // Start AI processing
       await processWithAI(project.id)
 
@@ -106,6 +155,7 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
       navigate('/dashboard')
     } catch (error) {
       console.error('Error creating project:', error)
+      updateProcessingStep('init', 'error', `Failed to create project: ${error.message}`)
       alert('Failed to create project. Please try again.')
     } finally {
       setLoading(false)
@@ -114,6 +164,8 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
 
   const processWithAI = async (projectId: string) => {
     try {
+      updateProcessingStep('script', 'processing', 'Analyzing your code with AI...')
+
       // Call our edge function to process the project
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-demo`, {
         method: 'POST',
@@ -128,10 +180,33 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to start AI processing')
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to start AI processing')
+      }
+
+      const result = await response.json()
+      
+      if (result.success) {
+        updateProcessingStep('script', 'completed', 'AI script generated')
+        updateProcessingStep('voice', 'completed', 'Voice narration created')
+        if (formData.includeFace) {
+          updateProcessingStep('face', 'completed', 'Face video generated')
+        }
+        updateProcessingStep('combine', 'completed', 'Video elements combined')
+        updateProcessingStep('finalize', 'completed', 'Video processing complete!')
+      } else {
+        throw new Error(result.error || 'Processing failed')
       }
     } catch (error) {
       console.error('Error starting AI processing:', error)
+      
+      // Update all remaining steps to error
+      setProcessingSteps(prev => prev.map(step => 
+        step.status === 'pending' || step.status === 'processing'
+          ? { ...step, status: 'error' as const, message: error.message }
+          : step
+      ))
+
       // Update project status to failed
       await supabase
         .from('projects')
@@ -366,6 +441,71 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
     </div>
   )
 
+  const renderProcessingDetails = () => (
+    <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
+      <div className="text-center mb-8">
+        <div className="w-16 h-16 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Loader2 className="h-8 w-8 text-white animate-spin" />
+        </div>
+        <h3 className="text-2xl font-bold text-gray-900 mb-2">
+          Generating Your Demo Video
+        </h3>
+        <p className="text-gray-600">
+          Our AI is working hard to create your professional demo video. This usually takes 2-5 minutes.
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        {processingSteps.map((step, index) => (
+          <div key={step.id} className="flex items-center space-x-4 p-4 bg-gray-50 rounded-xl">
+            <div className="flex-shrink-0">
+              {step.status === 'completed' && (
+                <CheckCircle className="h-6 w-6 text-green-500" />
+              )}
+              {step.status === 'processing' && (
+                <Loader2 className="h-6 w-6 text-purple-500 animate-spin" />
+              )}
+              {step.status === 'error' && (
+                <AlertCircle className="h-6 w-6 text-red-500" />
+              )}
+              {step.status === 'pending' && (
+                <div className="h-6 w-6 rounded-full border-2 border-gray-300"></div>
+              )}
+            </div>
+            
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <h4 className="font-medium text-gray-900">{step.name}</h4>
+                {step.timestamp && (
+                  <span className="text-xs text-gray-500">{step.timestamp}</span>
+                )}
+              </div>
+              {step.message && (
+                <p className={`text-sm mt-1 ${
+                  step.status === 'error' ? 'text-red-600' : 'text-gray-600'
+                }`}>
+                  {step.message}
+                </p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-8 text-center">
+        <p className="text-sm text-gray-500 mb-4">
+          You can safely close this window. We'll notify you when your video is ready.
+        </p>
+        <button
+          onClick={() => navigate('/dashboard')}
+          className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors"
+        >
+          Go to Dashboard
+        </button>
+      </div>
+    </div>
+  )
+
   const isStepValid = () => {
     switch (step) {
       case 1:
@@ -377,6 +517,14 @@ const CreateProject: React.FC<CreateProjectProps> = ({ onBack }) => {
       default:
         return false
     }
+  }
+
+  if (showProcessingDetails) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        {renderProcessingDetails()}
+      </div>
+    )
   }
 
   return (
