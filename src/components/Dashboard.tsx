@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Plus, Video, BarChart3, Settings, Github, Play, Edit, Trash2, Eye, Share2, Clock, CheckCircle, XCircle, Loader2, MessageCircle, RefreshCw, Wrench, ArrowRightLeft } from 'lucide-react'
+import { Plus, Video, BarChart3, Settings, Github, Play, Edit, Trash2, Eye, Share2, Clock, CheckCircle, XCircle, Loader2, MessageCircle, RefreshCw, Wrench } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase, Project } from '../lib/supabase'
 import CreateProject from './CreateProject'
@@ -12,7 +12,6 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true)
   const [checkingTavus, setCheckingTavus] = useState<Set<string>>(new Set())
   const [fixingTavus, setFixingTavus] = useState(false)
-  const [fixingMapping, setFixingMapping] = useState(false)
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [showLiveConversation, setShowLiveConversation] = useState(false)
@@ -85,42 +84,6 @@ const Dashboard = () => {
       console.error('Error fetching projects:', error)
     } finally {
       setLoading(false)
-    }
-  }
-
-  const fixTavusMapping = async () => {
-    console.log('🔄 Starting Tavus mapping fix')
-    setFixingMapping(true)
-    
-    try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fix-tavus-mapping`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to fix Tavus mapping')
-      }
-
-      const result = await response.json()
-      console.log('🔄 Mapping fix result:', result)
-      
-      // Refresh projects to show updated mapping
-      await fetchProjects()
-      
-      if (result.fixed > 0) {
-        alert(`✅ Successfully fixed ${result.fixed} project mappings!\n\nCorrect mapping:\n- Chat-App---React → b1ad928a3a\n- User Authentication System → 78e70f85d4\n\nCheck the console for detailed results.`)
-      } else {
-        alert(`📝 Mapping check completed.\n\nFixed: ${result.fixed} projects\nTotal: ${result.total} projects\n\nCheck console for detailed results.`)
-      }
-    } catch (error) {
-      console.error('💥 Error fixing Tavus mapping:', error)
-      alert('❌ Failed to fix mapping. Please try again.')
-    } finally {
-      setFixingMapping(false)
     }
   }
 
@@ -415,15 +378,6 @@ const Dashboard = () => {
     p.status === 'processing' && !p.tavus_video_id
   ).length
 
-  // Check if mapping might be wrong (completed projects with potentially swapped IDs)
-  const completedProjects = projects.filter(p => p.status === 'completed' && p.tavus_video_id)
-  const hasPotentialMappingIssue = completedProjects.length >= 2 && (
-    completedProjects.some(p => 
-      (p.title.includes('Chat') && p.tavus_video_id === '78e70f85d4') ||
-      (p.title.includes('Authentication') && p.tavus_video_id === 'b1ad928a3a')
-    )
-  )
-
   if (showCreateProject) {
     return (
       <div className="min-h-screen bg-gray-50 py-8">
@@ -487,20 +441,6 @@ const Dashboard = () => {
               </p>
             </div>
             <div className="flex items-center space-x-3">
-              {hasPotentialMappingIssue && (
-                <button 
-                  onClick={fixTavusMapping}
-                  disabled={fixingMapping}
-                  className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
-                >
-                  {fixingMapping ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowRightLeft className="h-4 w-4" />
-                  )}
-                  <span>Fix Mapping</span>
-                </button>
-              )}
               {processingWithoutTavus > 0 && (
                 <button 
                   onClick={fixTavusProjects}
@@ -548,36 +488,6 @@ const Dashboard = () => {
                 You've reached your monthly limit of {limits.videos} videos. 
                 <a href="#pricing" className="font-medium underline ml-1">Upgrade your plan</a> to create more demos.
               </p>
-            </div>
-          )}
-
-          {hasPotentialMappingIssue && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-red-800 font-medium">
-                    🔄 Tavus video IDs appear to be swapped between projects
-                  </p>
-                  <p className="text-red-600 text-sm">
-                    The Chat App has the Authentication video ID and vice versa. Click "Fix Mapping" to correct this.
-                  </p>
-                  <p className="text-red-500 text-xs mt-1">
-                    Expected: Chat-App → b1ad928a3a, User Authentication → 78e70f85d4
-                  </p>
-                </div>
-                <button 
-                  onClick={fixTavusMapping}
-                  disabled={fixingMapping}
-                  className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
-                >
-                  {fixingMapping ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowRightLeft className="h-4 w-4" />
-                  )}
-                  <span>Fix Now</span>
-                </button>
-              </div>
             </div>
           )}
 
