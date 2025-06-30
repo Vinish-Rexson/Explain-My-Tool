@@ -37,7 +37,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const loadingTimeout = setTimeout(() => {
       console.log('AuthProvider: Loading timeout reached, forcing loading to false')
       setLoading(false)
-    }, 20000) // Increased to 20 seconds max loading time
+    }, 30000) // Increased to 30 seconds max loading time
 
     // Handle OAuth redirect by cleaning up the URL
     const handleOAuthRedirect = () => {
@@ -177,9 +177,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       })()
 
-      // Race the profile fetch against a timeout - increased from 8 to 15 seconds
+      // Race the profile fetch against a timeout - increased from 15 to 30 seconds
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Profile fetch timeout')), 15000) // Increased to 15 second timeout
+        setTimeout(() => reject(new Error('Profile fetch timeout')), 30000) // Increased to 30 second timeout
       })
 
       await Promise.race([profilePromise, timeoutPromise])
