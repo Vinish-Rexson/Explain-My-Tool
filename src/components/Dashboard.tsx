@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Plus, Video, BarChart3, Settings, Github, Play, Edit, Trash2, Eye, Share2, Clock, CheckCircle, XCircle, Loader2, MessageCircle, RefreshCw } from 'lucide-react'
+import { Plus, Video, BarChart3, Settings, Github, Play, Edit, Trash2, Eye, Share2, Clock, CheckCircle, XCircle, Loader2, MessageCircle, RefreshCw, Wrench } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase, Project } from '../lib/supabase'
 import CreateProject from './CreateProject'
@@ -11,6 +11,7 @@ const Dashboard = () => {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [checkingTavus, setCheckingTavus] = useState<Set<string>>(new Set())
+  const [fixingTavus, setFixingTavus] = useState(false)
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [showLiveConversation, setShowLiveConversation] = useState(false)
@@ -74,6 +75,42 @@ const Dashboard = () => {
       console.error('Error fetching projects:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fixTavusProjects = async () => {
+    console.log('🔧 Starting Tavus projects fix')
+    setFixingTavus(true)
+    
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fix-tavus-projects`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to fix Tavus projects')
+      }
+
+      const result = await response.json()
+      console.log('🔧 Fix result:', result)
+      
+      // Refresh projects to show updated status
+      await fetchProjects()
+      
+      if (result.updated > 0) {
+        alert(`✅ Successfully fixed ${result.updated} projects with Tavus videos!`)
+      } else {
+        alert('📝 No projects were updated. Videos may still be processing.')
+      }
+    } catch (error) {
+      console.error('💥 Error fixing Tavus projects:', error)
+      alert('❌ Failed to fix projects. Please try again.')
+    } finally {
+      setFixingTavus(false)
     }
   }
 
@@ -306,6 +343,11 @@ const Dashboard = () => {
     (p.status === 'failed' || p.status === 'processing') && p.tavus_video_id
   ).length
 
+  // Count processing projects without Tavus IDs (these need fixing)
+  const processingWithoutTavus = projects.filter(p => 
+    p.status === 'processing' && !p.tavus_video_id
+  ).length
+
   if (showCreateProject) {
     return (
       <div className="min-h-screen bg-gray-50 py-8">
@@ -369,6 +411,20 @@ const Dashboard = () => {
               </p>
             </div>
             <div className="flex items-center space-x-3">
+              {processingWithoutTavus > 0 && (
+                <button 
+                  onClick={fixTavusProjects}
+                  disabled={fixingTavus}
+                  className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
+                >
+                  {fixingTavus ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Wrench className="h-4 w-4" />
+                  )}
+                  <span>Fix Tavus ({processingWithoutTavus})</span>
+                </button>
+              )}
               {pendingTavusProjects > 0 && (
                 <button 
                   onClick={manualTavusSync}
@@ -402,6 +458,33 @@ const Dashboard = () => {
                 You've reached your monthly limit of {limits.videos} videos. 
                 <a href="#pricing" className="font-medium underline ml-1">Upgrade your plan</a> to create more demos.
               </p>
+            </div>
+          )}
+
+          {processingWithoutTavus > 0 && (
+            <div className="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-orange-800 font-medium">
+                    🔧 {processingWithoutTavus} project{processingWithoutTavus > 1 ? 's' : ''} need Tavus video ID fixing
+                  </p>
+                  <p className="text-orange-600 text-sm">
+                    These projects are missing Tavus video IDs. Click "Fix Tavus" to match them with completed videos.
+                  </p>
+                </div>
+                <button 
+                  onClick={fixTavusProjects}
+                  disabled={fixingTavus}
+                  className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
+                >
+                  {fixingTavus ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Wrench className="h-4 w-4" />
+                  )}
+                  <span>Fix Now</span>
+                </button>
+              </div>
             </div>
           )}
 
