@@ -1,6 +1,3 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -29,7 +26,7 @@ function log(step: string, message: string, data?: any) {
   }
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -261,7 +258,7 @@ async function generateScriptWithGemini(formData: any, apiKey: string, projectId
         temperature: 0.7,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: 2048,
+        maxOutputTokens: 1024,
       }
     }),
   })
@@ -321,7 +318,7 @@ async function generateScriptWithOpenAI(formData: any, apiKey: string, projectId
           content: prompt
         }
       ],
-      max_tokens: 2000,
+      max_tokens: 1000,
       temperature: 0.7,
     }),
   })
@@ -372,7 +369,7 @@ async function generateScriptWithClaude(formData: any, apiKey: string, projectId
     },
     body: JSON.stringify({
       model: 'claude-3-sonnet-20240229',
-      max_tokens: 2000,
+      max_tokens: 1000,
       messages: [{
         role: 'user',
         content: prompt
@@ -420,17 +417,17 @@ async function generateVoice(script: string, voiceStyle: string, projectId: stri
     throw new Error('ELEVENLABS_API_KEY is required for voice generation')
   }
 
-  log('VOICE', '🎵 Mapping voice style to ElevenLabs voice ID', { voiceStyle })
+  log('VOICE', '🎵 Mapping voice style to ElevenLabs female voice ID', { voiceStyle })
   
-  // Map voice styles to ElevenLabs voice IDs
+  // Map voice styles to ElevenLabs female voice IDs
   const voiceMap = {
-    professional: 'pNInz6obpgDQGcFmaJgB', // Adam
-    casual: '21m00Tcm4TlvDq8ikWAM',      // Rachel
-    enthusiastic: 'AZnzlk1XvdvUeBnXmlld'  // Domi
+    professional: 'EXAVITQu4vr4xnSDxMaL', // Bella - Professional female voice
+    casual: '21m00Tcm4TlvDq8ikWAM',      // Rachel - Casual female voice
+    enthusiastic: 'jsCqWAovK2LkecY7zXl4'  // Freya - Enthusiastic female voice
   }
 
   const voiceId = voiceMap[voiceStyle as keyof typeof voiceMap] || voiceMap.professional
-  log('VOICE', '🎤 Selected voice ID', { voiceId, voiceStyle })
+  log('VOICE', '🎤 Selected female voice ID', { voiceId, voiceStyle })
 
   log('VOICE', '📡 Making ElevenLabs API request')
   const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
@@ -445,7 +442,9 @@ async function generateVoice(script: string, voiceStyle: string, projectId: stri
       model_id: 'eleven_monolingual_v1',
       voice_settings: {
         stability: 0.5,
-        similarity_boost: 0.5
+        similarity_boost: 0.5,
+        style: 0.0,
+        use_speaker_boost: true
       }
     }),
   })
@@ -525,7 +524,7 @@ async function generateFaceVideo(script: string, audioUrl: string, projectId: st
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      replica_id: tavusReplicaId, // Use environment variable instead of hardcoded 'default'
+      replica_id: tavusReplicaId,
       background_url: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1920&h=1080&fit=crop',
       audio_url: audioUrl
     }),
@@ -550,9 +549,9 @@ async function generateFaceVideo(script: string, audioUrl: string, projectId: st
   
   log('FACE', '⏳ Starting video generation polling', { videoId })
   
-  // Poll for completion
+  // Poll for completion - reduced time for 1-minute videos
   let attempts = 0
-  const maxAttempts = 30 // 5 minutes max
+  const maxAttempts = 20 // 3-4 minutes max for shorter videos
   const pollInterval = 10000 // 10 seconds
 
   while (attempts < maxAttempts) {
@@ -676,13 +675,17 @@ ${codeSnippet}
 \`\`\`
 
 Requirements:
-- Keep the script between 60-120 seconds when spoken
+- Keep the script between 30-60 seconds when spoken (maximum 1 minute)
 - Make it engaging and easy to follow
 - Include natural pauses and transitions
 - Explain technical concepts in accessible language
 - ${demoType === 'pitch' ? 'Focus on business value and impact' : 'Focus on technical implementation and learning'}
 - Use ${voiceStyle} tone throughout
+- Keep it concise and to the point for a 1-minute maximum duration
 
 Format the response as a clean script without stage directions or formatting markers.
 `
 }
+
+// Import createClient function
+import { createClient } from 'npm:@supabase/supabase-js@2'
