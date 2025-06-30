@@ -36,7 +36,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(session)
       setUser(session?.user ?? null)
       if (session?.user) {
-        fetchProfile(session.user.id)
+        fetchOrCreateProfile(session.user)
       } else {
         setLoading(false)
       }
@@ -50,7 +50,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(session?.user ?? null)
       
       if (session?.user) {
-        await fetchProfile(session.user.id)
+        if (event === 'SIGNED_IN') {
+          // Give the trigger time to create the profile
+          await new Promise(resolve => setTimeout(resolve, 1000))
+        }
+        await fetchOrCreateProfile(session.user)
       } else {
         setProfile(null)
         setLoading(false)
@@ -60,21 +64,67 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => subscription.unsubscribe()
   }, [])
 
-  const fetchProfile = async (userId: string) => {
+  const fetchOrCreateProfile = async (user: User) => {
     try {
-      const { data, error } = await supabase
+      // First try to fetch existing profile
+      let { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', userId)
+        .eq('id', user.id)
         .single()
 
-      if (error && error.code !== 'PGRST116') {
-        throw error
-      }
+      if (error && error.code === 'PGRST116') {
+        // Profile doesn't exist, create it
+        const newProfile = {
+          id: user.id,
+          email: user.email!,
+          full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
+          avatar_url: user.user_metadata?.avatar_url || null,
+          subscription_tier: 'free' as const,
+        }
 
-      setProfile(data)
+        const { data: createdProfile, error: createError } = await supabase
+          .from('profiles')
+          .insert([newProfile])
+          .select()
+          .single()
+
+        if (createError) {
+          console.error('Error creating profile:', createError)
+          // Still set a basic profile to avoid blocking the user
+          setProfile(newProfile)
+        } else {
+          setProfile(createdProfile)
+        }
+      } else if (error) {
+        console.error('Error fetching profile:', error)
+        // Create a basic profile object to avoid blocking the user
+        setProfile({
+          id: user.id,
+          email: user.email!,
+          full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
+          avatar_url: user.user_metadata?.avatar_url || null,
+          subscription_tier: 'free',
+          github_username: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+      } else {
+        setProfile(profile)
+      }
     } catch (error) {
-      console.error('Error fetching profile:', error)
+      console.error('Error in fetchOrCreateProfile:', error)
+      // Create a fallback profile to avoid blocking the user
+      setProfile({
+        id: user.id,
+        email: user.email!,
+        full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '',
+        avatar_url: user.user_metadata?.avatar_url || null,
+        subscription_tier: 'free',
+        github_username: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
     } finally {
       setLoading(false)
     }
